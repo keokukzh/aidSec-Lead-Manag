@@ -12,6 +12,8 @@ env/
 # Databases
 *.db
 *.sqlite3
+*.db-shm
+*.db-wal
 
 # Node
 node_modules/
@@ -30,3 +32,8 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Private skills/IDE
+.claude/
+.gemini/
+.antigravity/
