@@ -1,0 +1,40 @@
+{
+  "env": {
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+    "DISABLE_COST_WARNINGS": "1",
+    "USE_BUILTIN_RIPGREP": "1",
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npx claude-code-templates@latest --skill development/senior-frontend,development/skill-creator,development/webapp-testing,development/senior-architect,development/senior-backend,development/code-reviewer,web-development/react-best-practices,creative-design/ui-design-system,creative-design/canvas-design,document-processing/xlsx,document-processing/pptx,development/senior-prompt-engineer,development/brainstorming,productivity/file-organizer,enterprise-communication/excel-analysis)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:*)",
+      "Bash(npm run build)",
+      "Bash(npm start)",
+      "Bash(cd C:\\\\Users\\\\aidevelo\\\\Desktop\\\\Praxen leads\\\\aidsec_dashboard:*)",
+      "Bash(sleep 8:*)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(cd:*)",
+      "mcp__browsermcp__browser_navigate",
+      "Bash(ls:*)",
+      "Bash(cd C:\\\\Users\\\\aidevelo\\\\Desktop\\\\aidSec-Lead-Manag\\\\aidsec_dashboard:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "executeautomation-playwright-server",
+    "fetch",
+    "postgresql",
+    "context7",
+    "github",
+    "browsermcp"
+  ],
+  "statusLine": {
+    "type": "command",
+    "command": "python .claude/scripts/context-monitor.py"
+  }
+}

@@ -1,0 +1,2 @@
+﻿src/app/(dashboard)/leads/pipeline/page.tsx(91,35): error TS2352: Conversion of type 'Record<string, { items: unknown[]; total: number; }> | undefined' to type 'PipelineData' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, { items: unknown[]; total: number; }>' is missing the following properties from type 'PipelineData': offen, pending, gewonnen, verloren

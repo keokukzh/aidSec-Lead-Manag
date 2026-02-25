@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+:root {
+  /* AidSec Brand Colors */
+  --aidsec-teal: #00d4aa;
+  --aidsec-teal-dim: #00d4aa33;
+  --aidsec-amber: #f0a500;
+  --aidsec-surface: #1a1f2e;
+  --aidsec-border: #2a3040;
+  --aidsec-bg: #0e1117;
+  --aidsec-text: #e8eaed;
+  --aidsec-text-dim: #b8bec6;
+
+  /* Status Colors */
+  --status-offen: #3498db;
+  --status-pending: #f39c12;
+  --status-gewonnen: #2ecc71;
+  --status-verloren: #e74c3c;
+
+  /* Base colors */
+  --background: var(--aidsec-bg);
+  --foreground: var(--aidsec-text);
+  --card: var(--aidsec-surface);
+  --card-foreground: var(--aidsec-text);
+  --border: var(--aidsec-border);
+  --primary: var(--aidsec-teal);
+  --primary-foreground: #0e1117;
+  --secondary: var(--aidsec-surface);
+  --secondary-foreground: var(--aidsec-text);
+  --muted: var(--aidsec-border);
+  --muted-foreground: var(--aidsec-text-dim);
+  --accent: var(--aidsec-teal-dim);
+  --accent-foreground: var(--aidsec-text);
+  --destructive: #e74c3c;
+  --destructive-foreground: #ffffff;
+  --ring: var(--aidsec-teal);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+
+  --color-aidsec-teal: var(--aidsec-teal);
+  --color-aidsec-amber: var(--aidsec-amber);
+  --color-aidsec-surface: var(--aidsec-surface);
+  --color-aidsec-border: var(--aidsec-border);
+  --color-aidsec-text: var(--aidsec-text);
+  --color-aidsec-text-dim: var(--aidsec-text-dim);
+
+  --color-status-offen: var(--status-offen);
+  --color-status-pending: var(--status-pending);
+  --color-status-gewonnen: var(--status-gewonnen);
+  --color-status-verloren: var(--status-verloren);
+
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--aidsec-teal);
+}
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.badge-offen {
+  background: #3498db35;
+  color: #7ec8e3;
+  border: 1px solid #3498db55;
+}
+
+.badge-pending {
+  background: #f39c1235;
+  color: #f7c56e;
+  border: 1px solid #f39c1255;
+}
+
+.badge-gewonnen {
+  background: #2ecc7135;
+  color: #7ee2a8;
+  border: 1px solid #2ecc7155;
+}
+
+.badge-verloren {
+  background: #e74c3c35;
+  color: #f09a92;
+  border: 1px solid #e74c3c55;
+}
+
+/* Grade badges */
+.grade-badge {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-radius: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.grade-A {
+  background: #2ecc7140;
+  color: #58d68d;
+  border: 1px solid #2ecc7166;
+}
+
+.grade-B {
+  background: #f1c40f40;
+  color: #f5d657;
+  border: 1px solid #f1c40f66;
+}
+
+.grade-C {
+  background: #e67e2240;
+  color: #eb984e;
+  border: 1px solid #e67e2266;
+}
+
+.grade-D {
+  background: #e74c3c40;
+  color: #ec7063;
+  border: 1px solid #e74c3c66;
+}
+
+.grade-F {
+  background: #c0392b40;
+  color: #e06050;
+  border: 1px solid #c0392b66;
+}

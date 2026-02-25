@@ -1,0 +1,870 @@
+"""Email endpoints: send, history, templates, SMTP test."""
+from __future__ import annotations
+
+import time as _time
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from api.dependencies import get_db, verify_api_key
+from api.schemas.email import (
+    SendEmailRequest,
+    BulkSendRequest,
+    EmailHistoryOut,
+    GenerateEmailRequest,
+    SmtpTestResult,
+    TemplateOut,
+    CustomTemplateOut,
+    CustomTemplateCreate,
+    GlobalEmailHistoryOut,
+    DraftUpdateRequest,
+    BulkDraftApproveRequest,
+)
+from database.models import (
+    Lead,
+    LeadStatus,
+    EmailHistory,
+    EmailStatus,
+    EmailTemplate,
+    StatusHistory,
+    Settings,
+)
+from services.email_service import get_email_service, DEFAULT_TEMPLATES
+from services.llm_service import get_llm_service
+from services.outlook_service import get_outlook_service
+from services.outreach import detect_email_type, get_recommended_product, parse_llm_json
+
+router = APIRouter(tags=["emails"], dependencies=[Depends(verify_api_key)])
+
+_bulk_email_jobs: dict[str, dict] = {}
+
+
+def _load_signature(db: Session) -> dict:
+    sig_row = db.query(Settings).filter(Settings.key == "email_signature").first()
+    logo_row = db.query(Settings).filter(Settings.key == "signature_logo").first()
+    mime_row = db.query(Settings).filter(Settings.key == "signature_logo_mime").first()
+    return {
+        "text": sig_row.value if sig_row else "",
+        "logo_b64": logo_row.value if logo_row else "",
+        "logo_mime": mime_row.value if mime_row else "",
+    }
+
+
+@router.post("/emails/send")
+def send_email(payload: SendEmailRequest, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == payload.lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    if not lead.email:
+        raise HTTPException(400, "Lead has no email address")
+
+    svc = get_email_service()
+    if not svc.is_configured():
+        raise HTTPException(503, "SMTP not configured")
+
+    sig = _load_signature(db)
+    body = payload.body
+    if sig.get("text"):
+        body = body.rstrip() + "\n\n-- \n" + sig["text"]
+
+    result = svc.send_email(
+        to_email=lead.email,
+        subject=payload.subject,
+        body=body,
+        logo_b64=sig.get("logo_b64") or None,
+        logo_mime=sig.get("logo_mime") or None,
+    )
+
+    status = EmailStatus.SENT if result.get("success") else EmailStatus.FAILED
+    eh = EmailHistory(
+        lead_id=lead.id,
+        betreff=payload.subject,
+        inhalt=payload.body,
+        status=status,
+        gesendet_at=datetime.utcnow() if status == EmailStatus.SENT else None,
+        campaign_id=payload.campaign_id,
+    )
+    db.add(eh)
+
+    if status == EmailStatus.SENT and lead.status == LeadStatus.OFFEN:
+        old = lead.status
+        lead.status = LeadStatus.PENDING
+        db.add(StatusHistory(lead_id=lead.id, von_status=old, zu_status=LeadStatus.PENDING))
+
+    db.commit()
+
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "Send failed"))
+    return {"success": True, "email_id": eh.id}
+
+
+def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl: str, delay_seconds: int):
+    """Background task: send emails to multiple leads with delay."""
+    from database.database import get_session
+    session = get_session()
+    job = _bulk_email_jobs[job_id]
+    svc = get_email_service()
+
+    try:
+        sig_row = session.query(Settings).filter(Settings.key == "email_signature").first()
+        logo_row = session.query(Settings).filter(Settings.key == "signature_logo").first()
+        mime_row = session.query(Settings).filter(Settings.key == "signature_logo_mime").first()
+        sig = {
+            "text": sig_row.value if sig_row else "",
+            "logo_b64": logo_row.value if logo_row else "",
+            "logo_mime": mime_row.value if mime_row else "",
+        }
+
+        leads = session.query(Lead).filter(Lead.id.in_(lead_ids)).all()
+        lead_map = {l.id: l for l in leads}
+        job["total"] = len(lead_ids)
+
+        for i, lid in enumerate(lead_ids):
+            if job.get("cancelled"):
+                break
+            lead = lead_map.get(lid)
+            if not lead or not lead.email:
+                job["errors"] += 1
+                job["completed"] += 1
+                continue
+
+            body = body_tpl
+            subject = subject_tpl
+            variables = {
+                "firma": lead.firma or "",
+                "stadt": lead.stadt or "Schweiz",
+                "website": lead.website or "",
+                "ranking_grade": lead.ranking_grade or "?",
+                "ranking_score": str(lead.ranking_score or "?"),
+            }
+            for k, v in variables.items():
+                body = body.replace(f"{{{k}}}", v)
+                subject = subject.replace(f"{{{k}}}", v)
+
+            full_body = body
+            if sig.get("text"):
+                full_body = body.rstrip() + "\n\n-- \n" + sig["text"]
+
+            try:
+                result = svc.send_email(
+                    to_email=lead.email,
+                    subject=subject,
+                    body=full_body,
+                    logo_b64=sig.get("logo_b64") or None,
+                    logo_mime=sig.get("logo_mime") or None,
+                )
+                status = EmailStatus.SENT if result.get("success") else EmailStatus.FAILED
+                eh = EmailHistory(
+                    lead_id=lead.id, betreff=subject, inhalt=body,
+                    status=status,
+                    gesendet_at=datetime.utcnow() if status == EmailStatus.SENT else None,
+                )
+                session.add(eh)
+
+                if status == EmailStatus.SENT and lead.status == LeadStatus.OFFEN:
+                    old = lead.status
+                    lead.status = LeadStatus.PENDING
+                    session.add(StatusHistory(lead_id=lead.id, von_status=old, zu_status=LeadStatus.PENDING))
+
+                session.flush()
+                if result.get("success"):
+                    job["sent"] += 1
+                else:
+                    job["errors"] += 1
+            except Exception:
+                job["errors"] += 1
+
+            job["completed"] += 1
+
+            if i < len(lead_ids) - 1 and delay_seconds > 0:
+                _time.sleep(delay_seconds)
+
+        session.commit()
+        job["status"] = "done"
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = str(e)
+    finally:
+        session.close()
+
+
+@router.post("/emails/bulk-send")
+def start_bulk_send(
+    payload: BulkSendRequest,
+    background_tasks: BackgroundTasks,
+):
+    job_id = str(uuid.uuid4())[:8]
+    _bulk_email_jobs[job_id] = {
+        "status": "running",
+        "total": len(payload.lead_ids),
+        "completed": 0,
+        "sent": 0,
+        "errors": 0,
+    }
+    background_tasks.add_task(
+        _run_bulk_email, job_id, payload.lead_ids,
+        getattr(payload, "subject", ""), getattr(payload, "body", ""),
+        payload.delay_seconds,
+    )
+    return {"job_id": job_id}
+
+
+@router.get("/emails/bulk-send/{job_id}")
+def bulk_send_status(job_id: str):
+    job = _bulk_email_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+@router.post("/emails/bulk-send/{job_id}/cancel")
+def cancel_bulk_send(job_id: str):
+    job = _bulk_email_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    job["cancelled"] = True
+    return {"cancelled": True}
+
+
+@router.get("/emails/history/{lead_id}", response_model=list[EmailHistoryOut])
+def email_history(lead_id: int, db: Session = Depends(get_db)):
+    rows = (
+        db.query(EmailHistory)
+        .filter(EmailHistory.lead_id == lead_id)
+        .order_by(EmailHistory.id.desc())
+        .all()
+    )
+    return [
+        EmailHistoryOut(
+            id=r.id,
+            lead_id=r.lead_id,
+            betreff=r.betreff,
+            inhalt=r.inhalt,
+            status=r.status.value if hasattr(r.status, "value") else str(r.status),
+            gesendet_at=r.gesendet_at,
+            campaign_id=r.campaign_id,
+        )
+        for r in rows
+    ]
+
+
+@router.post("/emails/generate")
+def generate_email(payload: GenerateEmailRequest, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == payload.lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+
+    llm = get_llm_service()
+    result = llm.generate_outreach_email(lead, db, email_type=payload.email_type)
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "LLM generation failed"))
+
+    try:
+        parsed = parse_llm_json(result["content"])
+        return {"success": True, "betreff": parsed.get("betreff", ""), "inhalt": parsed.get("inhalt", "")}
+    except Exception:
+        return {"success": True, "raw": result["content"]}
+
+
+@router.get("/emails/templates", response_model=list[TemplateOut])
+def list_templates():
+    return [
+        TemplateOut(key=k, name=v["name"], betreff=v["betreff"], inhalt=v["inhalt"])
+        for k, v in DEFAULT_TEMPLATES.items()
+    ]
+
+
+@router.post("/emails/smtp-test", response_model=SmtpTestResult)
+def smtp_test():
+    svc = get_email_service()
+    result = svc.test_connection()
+    return SmtpTestResult(**result)
+
+
+@router.get("/emails/daily-count")
+def daily_email_count(db: Session = Depends(get_db)):
+    from datetime import date
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    count = (
+        db.query(EmailHistory)
+        .filter(EmailHistory.status == EmailStatus.SENT, EmailHistory.gesendet_at >= today_start)
+        .count()
+    )
+    return {"count": count, "warning": count >= 10}
+
+
+@router.get("/emails/history", response_model=list[GlobalEmailHistoryOut])
+def global_email_history(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(50, ge=1, le=100, description="Items per page"),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy.orm import joinedload
+
+    # Get total count for pagination info
+    total = db.query(EmailHistory).count()
+    pages = max(1, (total + per_page - 1) // per_page)
+
+    rows = (
+        db.query(EmailHistory)
+        .options(joinedload(EmailHistory.lead))
+        .order_by(EmailHistory.gesendet_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return [
+        GlobalEmailHistoryOut(
+            id=r.id,
+            lead_id=r.lead_id,
+            lead_firma=r.lead.firma if r.lead else None,
+            betreff=r.betreff,
+            inhalt=r.inhalt,
+            status=r.status.value if hasattr(r.status, "value") else str(r.status),
+            gesendet_at=r.gesendet_at,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/emails/drafts", response_model=list[GlobalEmailHistoryOut])
+def list_drafts(db: Session = Depends(get_db)):
+    """Fetch all pending email drafts generated by AI."""
+    from sqlalchemy.orm import joinedload
+    rows = (
+        db.query(EmailHistory)
+        .options(joinedload(EmailHistory.lead))
+        .filter(EmailHistory.status == EmailStatus.DRAFT)
+        .order_by(EmailHistory.id.desc())
+        .all()
+    )
+    return [
+        GlobalEmailHistoryOut(
+            id=r.id,
+            lead_id=r.lead_id,
+            lead_firma=r.lead.firma if r.lead else None,
+            betreff=r.betreff,
+            inhalt=r.inhalt,
+            status=r.status.value if hasattr(r.status, "value") else str(r.status),
+            gesendet_at=r.gesendet_at,
+        )
+        for r in rows
+    ]
+
+@router.put("/emails/drafts/{draft_id}")
+def update_draft(draft_id: int, payload: DraftUpdateRequest, db: Session = Depends(get_db)):
+    """Update a draft's subject and content."""
+    draft = db.query(EmailHistory).filter(EmailHistory.id == draft_id, EmailHistory.status == EmailStatus.DRAFT).first()
+    if not draft:
+        raise HTTPException(404, "Draft not found")
+        
+    draft.betreff = payload.subject
+    draft.inhalt = payload.body
+    db.commit()
+    return {"success": True}
+
+@router.post("/emails/drafts/bulk-approve")
+def bulk_approve_drafts(payload: BulkDraftApproveRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Approve multiple drafts and submit them to be sent in background."""
+    drafts = db.query(EmailHistory).filter(EmailHistory.id.in_(payload.draft_ids), EmailHistory.status == EmailStatus.DRAFT).all()
+    
+    approved_ids = []
+    # Currently just sending synchronously inside loop or we can use background task
+    # For simplicity, we just change their status to QUEUED or handle sending here:
+    svc = get_email_service()
+    
+    if not svc.is_configured():
+        raise HTTPException(503, "SMTP not configured")
+        
+    sig = _load_signature(db)
+    
+    for draft in drafts:
+        lead = db.query(Lead).filter(Lead.id == draft.lead_id).first()
+        if not lead or not lead.email:
+            draft.status = EmailStatus.FAILED
+            continue
+            
+        body = draft.inhalt
+        if sig.get("text"):
+            body = body.rstrip() + "\n\n-- \n" + sig["text"]
+            
+        # Send right away (or queue if using real async worker like Celery)
+        # Note: If there are many drafts, it's better to background it.
+        # But `_run_bulk_email` assumes template variables. We already have the concrete text.
+        # Let's send directly for now, or assume this runs fast.
+        try:
+            res = svc.send_email(
+                to_email=lead.email,
+                subject=draft.betreff,
+                body=body,
+                logo_b64=sig.get("logo_b64") or None,
+                logo_mime=sig.get("logo_mime") or None,
+            )
+            if res.get("success"):
+                draft.status = EmailStatus.SENT
+                draft.gesendet_at = datetime.utcnow()
+                approved_ids.append(draft.id)
+                
+                if lead.status == LeadStatus.OFFEN:
+                    old = lead.status
+                    lead.status = LeadStatus.PENDING
+                    db.add(StatusHistory(lead_id=lead.id, von_status=old, zu_status=LeadStatus.PENDING))
+            else:
+                draft.status = EmailStatus.FAILED
+        except Exception:
+            draft.status = EmailStatus.FAILED
+
+    db.commit()
+    return {"approved": len(approved_ids), "failed": len(drafts) - len(approved_ids)}
+
+
+@router.get("/emails/custom-templates", response_model=list[CustomTemplateOut])
+def list_custom_templates(db: Session = Depends(get_db)):
+    rows = db.query(EmailTemplate).order_by(EmailTemplate.name).all()
+    return [CustomTemplateOut.model_validate(r) for r in rows]
+
+
+@router.post("/emails/custom-templates", response_model=CustomTemplateOut, status_code=201)
+def create_custom_template(payload: CustomTemplateCreate, db: Session = Depends(get_db)):
+    tpl = EmailTemplate(name=payload.name, betreff=payload.betreff, inhalt=payload.inhalt)
+    db.add(tpl)
+    db.commit()
+    db.refresh(tpl)
+    return CustomTemplateOut.model_validate(tpl)
+
+
+@router.patch("/emails/custom-templates/{tpl_id}", response_model=CustomTemplateOut)
+def update_custom_template(tpl_id: int, payload: CustomTemplateCreate, db: Session = Depends(get_db)):
+    tpl = db.query(EmailTemplate).filter(EmailTemplate.id == tpl_id).first()
+    if not tpl:
+        raise HTTPException(404, "Template not found")
+    tpl.name = payload.name
+    tpl.betreff = payload.betreff
+    tpl.inhalt = payload.inhalt
+    db.commit()
+    db.refresh(tpl)
+    return CustomTemplateOut.model_validate(tpl)
+
+
+@router.delete("/emails/custom-templates/{tpl_id}", status_code=204)
+def delete_custom_template(tpl_id: int, db: Session = Depends(get_db)):
+    tpl = db.query(EmailTemplate).filter(EmailTemplate.id == tpl_id).first()
+    if not tpl:
+        raise HTTPException(404, "Template not found")
+    db.delete(tpl)
+    db.commit()
+
+
+@router.post("/emails/send-to-outlook")
+def send_to_outlook_draft(payload: dict):
+    """
+    Create an email draft in Outlook.
+
+    Request body:
+    - subject: Email subject
+    - body: Email body content (plain text)
+    - html_body: Optional HTML content
+    - to_email: Optional recipient email
+    """
+    subject = payload.get("subject", "")
+    body = payload.get("body", "")
+    html_body = payload.get("html_body")
+    to_email = payload.get("to_email")
+
+    if not subject:
+        raise HTTPException(400, "Subject is required")
+
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        raise HTTPException(503, "Outlook nicht konfiguriert. Bitte in Einstellungen konfigurieren.")
+
+    # Use HTML body if provided, otherwise use plain text
+    if html_body:
+        result = outlook.create_draft_with_html(
+            subject=subject,
+            html_body=html_body,
+            to_email=to_email
+        )
+    else:
+        result = outlook.create_draft(
+            subject=subject,
+            body=body,
+            to_email=to_email
+        )
+
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "Fehler beim Erstellen des Entwurfs"))
+
+    return {
+        "success": True,
+        "draft_id": result.get("draft_id"),
+        "web_link": result.get("web_link"),
+        "message": result.get("message")
+    }
+
+
+@router.get("/emails/outlook-configured")
+def outlook_configured():
+    """Check if Outlook is configured"""
+    outlook = get_outlook_service()
+    return {
+        "configured": outlook.is_configured(),
+        "user_email": outlook.user_email if outlook.is_configured() else None
+    }
+
+
+@router.post("/emails/outlook-draft")
+def create_outlook_draft(payload: dict, db: Session = Depends(get_db)):
+    """
+    Create an Outlook email draft from a lead.
+
+    Request body:
+    - lead_id: Lead ID to get email address from
+    - subject: Email subject
+    - body: Email body content (plain text or HTML)
+    """
+    lead_id = payload.get("lead_id")
+    subject = payload.get("subject", "")
+    body = payload.get("body", "")
+
+    if not lead_id:
+        raise HTTPException(400, "lead_id is required")
+    if not subject:
+        raise HTTPException(400, "Subject is required")
+
+    # Get lead
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        raise HTTPException(503, "Outlook nicht konfiguriert")
+
+    result = outlook.create_draft_with_html(
+        subject=subject,
+        html_body=body,
+        to_email=lead.email
+    )
+
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "Fehler beim Erstellen des Entwurfs"))
+
+    return {
+        "success": True,
+        "draft_id": result.get("draft_id"),
+        "web_link": result.get("web_link"),
+        "message": result.get("message")
+    }
+
+
+# ============ OAuth Endpoints ============
+
+import secrets
+
+
+@router.get("/emails/outlook/connect")
+def outlook_connect():
+    """
+    Get OAuth authorization URL for connecting Outlook account.
+    User should be redirected to this URL to authorize access.
+    """
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        raise HTTPException(503, "Outlook nicht konfiguriert")
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    auth_url = outlook.get_authorization_url(state)
+
+    return {
+        "authorization_url": auth_url,
+        "state": state,
+        "message": "Öffnen Sie die URL und melden Sie sich bei Microsoft an"
+    }
+
+
+@router.get("/emails/debug-config")
+def debug_config():
+    """Diagnostic endpoint to check if keys are loaded (masked)."""
+    client_id = os.getenv("OUTLOOK_CLIENT_ID", "")
+    client_secret = os.getenv("OUTLOOK_CLIENT_SECRET", "")
+    return {
+        "client_id_present": bool(client_id),
+        "client_id_starts_with": client_id[:4] if client_id else "",
+        "client_secret_present": bool(client_secret),
+        "client_secret_len": len(client_secret) if client_secret else 0,
+        "env_path": os.path.abspath(".env"),
+        "cwd": os.getcwd()
+    }
+
+
+@router.get("/emails/outlook/status")
+def outlook_status():
+    """Check if Outlook is connected and return status."""
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        return {"connected": False, "configured": False, "message": "Outlook nicht konfiguriert"}
+
+    connected_user = outlook.get_connected_user()
+
+    if connected_user:
+        test_result = outlook.test_connection(connected_user)
+        return {
+            "connected": True,
+            "configured": True,
+            "user_email": connected_user,
+            "message": test_result.get("detail", "Verbunden")
+        }
+
+    return {
+        "connected": False,
+        "configured": True,
+        "message": "Nicht verbunden. Rufen Sie /emails/outlook/connect auf."
+    }
+
+
+@router.post("/emails/outlook/callback")
+def outlook_callback(code: str, state: str = ""):
+    """
+    OAuth callback - exchange authorization code for tokens.
+    This should be called after user authorizes the app.
+    """
+    print(f"DEBUG: Outlook callback received - code: {code[:10]}..., state: {state}")
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        print("DEBUG: Outlook not configured")
+        raise HTTPException(503, "Outlook nicht konfiguriert (Client ID/Secret fehlen)")
+
+    try:
+        token_data = outlook.exchange_code_for_token(code)
+
+        if not token_data:
+            print("DEBUG: Token exchange failed - no data returned")
+            raise HTTPException(400, "Token-Abruf fehlgeschlagen. Bitte prüfen Sie die Azure-Konfiguration (Redirect URI, Secret).")
+
+        print(f"DEBUG: Successfully connected as {token_data.get('user_email')}")
+        return {
+            "success": True,
+            "user_email": token_data.get("user_email"),
+            "message": "Erfolgreich mit Outlook verbunden!"
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"DEBUG: Critical error in outlook_callback: {str(e)}")
+        raise HTTPException(500, f"Interner Fehler beim Outlook-Verbindungsaufbau: {str(e)}")
+
+
+@router.post("/emails/outlook/disconnect")
+def outlook_disconnect():
+    """Disconnect Outlook account (clear tokens)."""
+    outlook = get_outlook_service()
+    outlook.disconnect()
+    return {"success": True, "message": "Outlook getrennt"}
+
+
+@router.post("/emails/outlook/send")
+def outlook_send(
+    lead_id: int,
+    subject: str,
+    body: str,
+    db: Session = Depends(get_db)
+):
+    """Send email directly via Outlook (not as draft)."""
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        raise HTTPException(503, "Outlook nicht konfiguriert")
+
+    # Get lead
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead nicht gefunden")
+
+    if not lead.email:
+        raise HTTPException(400, "Lead hat keine E-Mail-Adresse")
+
+    # Send email
+    result = outlook.send_email(
+        subject=subject,
+        body=body,
+        to_email=lead.email
+    )
+
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "Fehler beim Senden"))
+
+    # Save to email history
+    email_history = EmailHistory(
+        lead_id=lead_id,
+        betreff=subject,
+        inhalt=body[:500],
+        status=EmailStatus.SENT,
+        gesendet_at=datetime.utcnow()
+    )
+    db.add(email_history)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": result.get("message")
+    }
+
+
+@router.get("/emails/outlook/sent")
+def outlook_sent_emails(limit: int = 50):
+    """Get sent emails from Outlook."""
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        raise HTTPException(503, "Outlook nicht konfiguriert")
+
+    result = outlook.get_sent_emails(limit=limit)
+
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "Fehler beim Abrufen"))
+
+    return {
+        "success": True,
+        "emails": result.get("emails", []),
+        "total": result.get("total", 0)
+    }
+
+
+@router.post("/emails/outlook/sync")
+def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
+    """
+    Sync sent emails from Outlook to the database.
+    Matches emails to leads by email address.
+    """
+    from database.models import Lead, EmailHistory, EmailStatus
+    from datetime import datetime
+
+    outlook = get_outlook_service()
+
+    if not outlook.is_configured():
+        raise HTTPException(503, "Outlook nicht konfiguriert")
+
+    # Get sent emails from Outlook
+    result = outlook.get_sent_emails(limit=limit)
+
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "Fehler beim Abrufen"))
+
+    outlook_emails = result.get("emails", [])
+    synced = 0
+    matched = 0
+    skipped = 0
+    errors = []
+
+    for email in outlook_emails:
+        try:
+            outlook_id = email.get("id")
+            to_addresses = email.get("to", [])
+            subject = email.get("subject", "")
+            sent_at_str = email.get("sent_at")
+
+            if not to_addresses:
+                skipped += 1
+                continue
+
+            # Try to match recipient to a lead
+            for to_email in to_addresses:
+                lead = db.query(Lead).filter(Lead.email.ilike(to_email)).first()
+
+                if lead:
+                    # Check if already synced
+                    existing = db.query(EmailHistory).filter(
+                        EmailHistory.outlook_message_id == outlook_id
+                    ).first()
+
+                    if existing:
+                        skipped += 1
+                        break
+
+                    # Parse sent_at datetime
+                    gesendet_at = None
+                    if sent_at_str:
+                        try:
+                            gesendet_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
+                        except:
+                            pass
+
+                    # Create email history entry
+                    email_history = EmailHistory(
+                        lead_id=lead.id,
+                        betreff=subject,
+                        inhalt=email.get("preview", ""),
+                        status=EmailStatus.SENT,
+                        gesendet_at=gesendet_at,
+                        outlook_message_id=outlook_id
+                    )
+                    db.add(email_history)
+                    synced += 1
+                    matched += 1
+                    break
+            else:
+                # No matching lead found
+                skipped += 1
+
+        except Exception as e:
+            errors.append(f"Error processing email {email.get('id')}: {str(e)}")
+
+    db.commit()
+
+    return {
+        "success": True,
+        "synced": synced,
+        "matched": matched,
+        "skipped": skipped,
+        "errors": errors[:5] if errors else None
+    }
+
+
+@router.get("/emails/synced")
+def get_synced_emails(
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """Get all synced (sent) emails with lead information."""
+    from database.models import Lead, EmailHistory
+
+    emails = (
+        db.query(EmailHistory, Lead)
+        .join(Lead, EmailHistory.lead_id == Lead.id)
+        .filter(EmailHistory.status == EmailStatus.SENT)
+        .order_by(EmailHistory.gesendet_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for email_history, lead in emails:
+        result.append({
+            "id": email_history.id,
+            "lead_id": lead.id,
+            "firma": lead.firma,
+            "lead_email": lead.email,
+            "betreff": email_history.betreff,
+            "inhalt": email_history.inhalt[:200] + "..." if len(email_history.inhalt) > 200 else email_history.inhalt,
+            "status": email_history.status.value,
+            "gesendet_at": email_history.gesendet_at.isoformat() if email_history.gesendet_at else None,
+            "outlook_message_id": email_history.outlook_message_id,
+            "campaign_id": email_history.campaign_id
+        })
+
+    return {
+        "success": True,
+        "emails": result,
+        "total": len(result)
+    }
