@@ -176,8 +176,17 @@ class EmailTemplate(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Self-referential relationship for versioning
-    parent = relationship("EmailTemplate", remote_side=[id], foreign_keys=[parent_template_id])
-    children = relationship("EmailTemplate", backref="parent", foreign_keys=[parent_template_id])
+    parent = relationship(
+        "EmailTemplate",
+        remote_side=[id],
+        foreign_keys=[parent_template_id],
+        back_populates="children",
+    )
+    children = relationship(
+        "EmailTemplate",
+        foreign_keys=[parent_template_id],
+        back_populates="parent",
+    )
 
     def __repr__(self):
         return f"<EmailTemplate(id={self.id}, name='{self.name}', v{self.version})>"

@@ -38,20 +38,20 @@ export default function SettingsPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   // Form state
-  const [smtpHost, setSmtpHost] = useState("");
-  const [smtpPort, setSmtpPort] = useState("");
-  const [smtpUser, setSmtpUser] = useState("");
-  const [smtpPass, setSmtpPass] = useState("");
-  const [smtpFrom, setSmtpFrom] = useState("");
+  const [smtpHost, setSmtpHost] = useState<string | undefined>(undefined);
+  const [smtpPort, setSmtpPort] = useState<string | undefined>(undefined);
+  const [smtpUser, setSmtpUser] = useState<string | undefined>(undefined);
+  const [smtpPass, setSmtpPass] = useState<string | undefined>(undefined);
+  const [smtpFrom, setSmtpFrom] = useState<string | undefined>(undefined);
 
-  const [llmProvider, setLlmProvider] = useState("lm_studio");
-  const [llmModel, setLlmModel] = useState("");
-  const [openaiUrl, setOpenaiUrl] = useState("");
-  const [openaiKey, setOpenaiKey] = useState("");
+  const [llmProvider, setLlmProvider] = useState<string | undefined>(undefined);
+  const [llmModel, setLlmModel] = useState<string | undefined>(undefined);
+  const [openaiUrl, setOpenaiUrl] = useState<string | undefined>(undefined);
+  const [openaiKey, setOpenaiKey] = useState<string | undefined>(undefined);
 
-  const [outlookTenantId, setOutlookTenantId] = useState("");
-  const [outlookClientId, setOutlookClientId] = useState("");
-  const [outlookClientSecret, setOutlookClientSecret] = useState("");
+  const [outlookTenantId, setOutlookTenantId] = useState<string | undefined>(undefined);
+  const [outlookClientId, setOutlookClientId] = useState<string | undefined>(undefined);
+  const [outlookClientSecret, setOutlookClientSecret] = useState<string | undefined>(undefined);
 
   // Query for settings
   const { data: settings, isLoading } = useQuery({
@@ -62,25 +62,20 @@ export default function SettingsPage() {
     },
   });
 
-  // Populate form when settings load
-  useEffect(() => {
-    if (settings) {
-      setSmtpHost(settings.SMTP_HOST || "");
-      setSmtpPort(settings.SMTP_PORT || "587");
-      setSmtpUser(settings.SMTP_USER || "");
-      setSmtpPass(settings.SMTP_PASS || "");
-      setSmtpFrom(settings.SMTP_FROM || "");
+  const smtpHostValue = smtpHost ?? settings?.SMTP_HOST ?? "";
+  const smtpPortValue = smtpPort ?? settings?.SMTP_PORT ?? "587";
+  const smtpUserValue = smtpUser ?? settings?.SMTP_USER ?? "";
+  const smtpPassValue = smtpPass ?? settings?.SMTP_PASS ?? "";
+  const smtpFromValue = smtpFrom ?? settings?.SMTP_FROM ?? "";
 
-      setLlmProvider(settings.DEFAULT_PROVIDER || "lm_studio");
-      setLlmModel(settings.OPENAI_MODEL || "");
-      setOpenaiUrl(settings.OPENAI_BASE_URL || "");
-      setOpenaiKey(settings.OPENAI_API_KEY || "");
+  const llmProviderValue = llmProvider ?? settings?.DEFAULT_PROVIDER ?? "lm_studio";
+  const llmModelValue = llmModel ?? settings?.OPENAI_MODEL ?? "";
+  const openaiUrlValue = openaiUrl ?? settings?.OPENAI_BASE_URL ?? "";
+  const openaiKeyValue = openaiKey ?? settings?.OPENAI_API_KEY ?? "";
 
-      setOutlookTenantId(settings.OUTLOOK_TENANT_ID || "");
-      setOutlookClientId(settings.OUTLOOK_CLIENT_ID || "");
-      setOutlookClientSecret(settings.OUTLOOK_CLIENT_SECRET || "");
-    }
-  }, [settings]);
+  const outlookTenantIdValue = outlookTenantId ?? settings?.OUTLOOK_TENANT_ID ?? "";
+  const outlookClientIdValue = outlookClientId ?? settings?.OUTLOOK_CLIENT_ID ?? "";
+  const outlookClientSecretValue = outlookClientSecret ?? settings?.OUTLOOK_CLIENT_SECRET ?? "";
 
   // Query for Outlook status
   const { data: outlookStatus, isLoading: outlookLoading } = useQuery({
@@ -93,11 +88,11 @@ export default function SettingsPage() {
   const saveSmtpMutation = useMutation({
     mutationFn: async () => {
       const data = {
-        SMTP_HOST: smtpHost,
-        SMTP_PORT: smtpPort,
-        SMTP_USER: smtpUser,
-        SMTP_PASS: smtpPass,
-        SMTP_FROM: smtpFrom,
+        SMTP_HOST: smtpHostValue,
+        SMTP_PORT: smtpPortValue,
+        SMTP_USER: smtpUserValue,
+        SMTP_PASS: smtpPassValue,
+        SMTP_FROM: smtpFromValue,
       };
       await settingsApi.update(data);
     },
@@ -114,12 +109,12 @@ export default function SettingsPage() {
   const saveLlmMutation = useMutation({
     mutationFn: async () => {
       const data: Record<string, string> = {
-        DEFAULT_PROVIDER: llmProvider,
-        OPENAI_MODEL: llmModel,
+        DEFAULT_PROVIDER: llmProviderValue,
+        OPENAI_MODEL: llmModelValue,
       };
-      if (llmProvider === "openai_compatible" || llmProvider === "openai") {
-        data.OPENAI_BASE_URL = openaiUrl;
-        data.OPENAI_API_KEY = openaiKey;
+      if (llmProviderValue === "openai_compatible" || llmProviderValue === "openai") {
+        data.OPENAI_BASE_URL = openaiUrlValue;
+        data.OPENAI_API_KEY = openaiKeyValue;
       }
       await settingsApi.update(data);
     },
@@ -136,9 +131,9 @@ export default function SettingsPage() {
   const saveOutlookSettingsMutation = useMutation({
     mutationFn: async () => {
       const data = {
-        OUTLOOK_TENANT_ID: outlookTenantId,
-        OUTLOOK_CLIENT_ID: outlookClientId,
-        OUTLOOK_CLIENT_SECRET: outlookClientSecret,
+        OUTLOOK_TENANT_ID: outlookTenantIdValue,
+        OUTLOOK_CLIENT_ID: outlookClientIdValue,
+        OUTLOOK_CLIENT_SECRET: outlookClientSecretValue,
       };
       await settingsApi.update(data);
     },
@@ -331,7 +326,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">SMTP-Host</label>
             <input
               type="text"
-              value={smtpHost}
+              value={smtpHostValue}
               onChange={(e) => setSmtpHost(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="smtp.example.com"
@@ -341,7 +336,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">SMTP-Port</label>
             <input
               type="number"
-              value={smtpPort}
+              value={smtpPortValue}
               onChange={(e) => setSmtpPort(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="587"
@@ -351,7 +346,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Benutzername</label>
             <input
               type="text"
-              value={smtpUser}
+              value={smtpUserValue}
               onChange={(e) => setSmtpUser(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="user@example.com"
@@ -361,7 +356,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Passwort</label>
             <input
               type="password"
-              value={smtpPass}
+              value={smtpPassValue}
               onChange={(e) => setSmtpPass(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="••••••••"
@@ -371,7 +366,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Absender-E-Mail</label>
             <input
               type="email"
-              value={smtpFrom}
+              value={smtpFromValue}
               onChange={(e) => setSmtpFrom(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="noreply@example.com"
@@ -404,7 +399,7 @@ export default function SettingsPage() {
           <div>
             <label className="block text-sm text-[#b8bec6]">Provider</label>
             <select
-              value={llmProvider}
+              value={llmProviderValue}
               onChange={(e) => setLlmProvider(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               aria-label="LLM Provider auswählen"
@@ -418,19 +413,19 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Modell</label>
             <input
               type="text"
-              value={llmModel}
+              value={llmModelValue}
               onChange={(e) => setLlmModel(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="MiniMax-M2.5"
             />
           </div>
-          {(llmProvider === "openai_compatible" || llmProvider === "openai") && (
+          {(llmProviderValue === "openai_compatible" || llmProviderValue === "openai") && (
             <>
               <div>
                 <label className="block text-sm text-[#b8bec6]">API URL</label>
                 <input
                   type="text"
-                  value={openaiUrl}
+                  value={openaiUrlValue}
                   onChange={(e) => setOpenaiUrl(e.target.value)}
                   className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
                   placeholder="https://api.openai.com/v1"
@@ -440,7 +435,7 @@ export default function SettingsPage() {
                 <label className="block text-sm text-[#b8bec6]">API Key</label>
                 <input
                   type="password"
-                  value={openaiKey}
+                  value={openaiKeyValue}
                   onChange={(e) => setOpenaiKey(e.target.value)}
                   className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
                   placeholder="sk-..."
@@ -476,7 +471,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Tenant ID</label>
             <input
               type="text"
-              value={outlookTenantId}
+              value={outlookTenantIdValue}
               onChange={(e) => setOutlookTenantId(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
@@ -486,7 +481,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Client ID</label>
             <input
               type="text"
-              value={outlookClientId}
+              value={outlookClientIdValue}
               onChange={(e) => setOutlookClientId(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
@@ -496,7 +491,7 @@ export default function SettingsPage() {
             <label className="block text-sm text-[#b8bec6]">Client Secret</label>
             <input
               type="password"
-              value={outlookClientSecret}
+              value={outlookClientSecretValue}
               onChange={(e) => setOutlookClientSecret(e.target.value)}
               className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               placeholder="••••••••••••••••"

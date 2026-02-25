@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { leadsApi } from "@/lib/api";
+import { leadsApi, LeadListItem } from "@/lib/api";
 import { ResearchMissingButton } from "@/components/leads";
 import { cn } from "@/lib/utils";
 import {
@@ -12,11 +12,6 @@ import {
   Loader2,
   AlertCircle,
   ChevronRight,
-  Trash2,
-  RefreshCw,
-  Check,
-  X,
-  Globe,
 } from "lucide-react";
 
 const statusOptions = [
@@ -81,7 +76,6 @@ export default function LeadsPage() {
   const [kategorie, setKategorie] = useState("");
   const [stadt, setStadt] = useState("");
   const [ranking, setRanking] = useState("");
-  const [quelle, setQuelle] = useState("");
   const [sort, setSort] = useState("newest");
 
   // Bulk selection
@@ -89,7 +83,7 @@ export default function LeadsPage() {
   const [bulkAction, setBulkAction] = useState<string>("");
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["leads", status, kategorie, search, stadt, ranking, quelle, sort],
+    queryKey: ["leads", status, kategorie, search, stadt, ranking, sort],
     queryFn: () =>
       leadsApi.list({
         status: status || undefined,
@@ -97,24 +91,22 @@ export default function LeadsPage() {
         search: search || undefined,
         stadt: stadt || undefined,
         ranking: ranking || undefined,
-        quelle: quelle || undefined,
         sort: sort || undefined,
         limit: 200,
       }),
   });
 
-  const leads = data?.leads || [];
+  const leads = useMemo(() => data?.leads || [], [data?.leads]);
   const total = data?.total || 0;
 
   // Extract unique cities and sources for filters
   const uniqueCities = useMemo(() => {
-    const cities = new Set(leads.map((l: any) => l.stadt).filter(Boolean));
+    const cities = new Set(
+      leads
+        .map((l: LeadListItem) => l.stadt)
+        .filter((city): city is string => Boolean(city))
+    );
     return Array.from(cities).sort();
-  }, [leads]);
-
-  const uniqueQuellen = useMemo(() => {
-    const quellen = new Set(leads.map((l: any) => l.quelle).filter(Boolean));
-    return Array.from(quellen).sort();
   }, [leads]);
 
   // Bulk status mutation
@@ -152,7 +144,7 @@ export default function LeadsPage() {
     if (selectedLeads.size === leads.length) {
       setSelectedLeads(new Set());
     } else {
-      setSelectedLeads(new Set(leads.map((l: any) => l.id)));
+      setSelectedLeads(new Set(leads.map((l: LeadListItem) => l.id)));
     }
   };
 
@@ -205,11 +197,13 @@ export default function LeadsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-4 rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-4">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative flex-1 min-w-50">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#b8bec6]" />
           <input
             type="text"
             placeholder="Suche nach Name, Firma, Email..."
+            title="Leads durchsuchen"
+            aria-label="Leads durchsuchen"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-md border border-[#2a3040] bg-[#0e1117] pl-10 pr-4 py-2 text-[#e8eaed] placeholder-[#6b728099] focus:border-[#00d4aa] focus:outline-none focus:ring-1 focus:ring-[#00d4aa]"
@@ -219,6 +213,8 @@ export default function LeadsPage() {
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
+          title="Nach Status filtern"
+          aria-label="Nach Status filtern"
           className="rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
         >
           {statusOptions.map((opt) => (
@@ -231,6 +227,8 @@ export default function LeadsPage() {
         <select
           value={kategorie}
           onChange={(e) => setKategorie(e.target.value)}
+          title="Nach Kategorie filtern"
+          aria-label="Nach Kategorie filtern"
           className="rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
         >
           {kategorieOptions.map((opt) => (
@@ -243,6 +241,8 @@ export default function LeadsPage() {
         <select
           value={stadt}
           onChange={(e) => setStadt(e.target.value)}
+          title="Nach Stadt filtern"
+          aria-label="Nach Stadt filtern"
           className="rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
         >
           <option value="">Alle Städte</option>
@@ -256,6 +256,8 @@ export default function LeadsPage() {
         <select
           value={ranking}
           onChange={(e) => setRanking(e.target.value)}
+          title="Nach Ranking filtern"
+          aria-label="Nach Ranking filtern"
           className="rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
         >
           {rankingOptions.map((opt) => (
@@ -268,6 +270,8 @@ export default function LeadsPage() {
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value)}
+          title="Sortierung auswählen"
+          aria-label="Sortierung auswählen"
           className="rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
         >
           {sortOptions.map((opt) => (
@@ -288,6 +292,8 @@ export default function LeadsPage() {
             <select
               value={bulkAction}
               onChange={(e) => setBulkAction(e.target.value)}
+              title="Bulk-Aktion auswählen"
+              aria-label="Bulk-Aktion auswählen"
               className="rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-1.5 text-sm text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
             >
               <option value="">Aktion wählen...</option>
@@ -348,6 +354,8 @@ export default function LeadsPage() {
                       type="checkbox"
                       checked={selectedLeads.size === leads.length && leads.length > 0}
                       onChange={handleSelectAll}
+                      title="Alle Leads auswählen"
+                      aria-label="Alle Leads auswählen"
                       className="h-4 w-4 rounded border-[#2a3040] bg-[#0e1117] text-[#00d4aa] focus:ring-[#00d4aa]"
                     />
                   </th>
@@ -384,7 +392,7 @@ export default function LeadsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2a3040]">
-                {leads.map((lead: any, index: number) => (
+                {leads.map((lead: LeadListItem, index: number) => (
                   <tr
                     key={lead.id}
                     className={cn(
@@ -397,6 +405,8 @@ export default function LeadsPage() {
                         type="checkbox"
                         checked={selectedLeads.has(lead.id)}
                         onChange={() => handleSelectLead(lead.id)}
+                        title={`Lead ${lead.firma || lead.id} auswählen`}
+                        aria-label={`Lead ${lead.firma || lead.id} auswählen`}
                         className="h-4 w-4 rounded border-[#2a3040] bg-[#0e1117] text-[#00d4aa] focus:ring-[#00d4aa]"
                       />
                     </td>
@@ -451,7 +461,7 @@ export default function LeadsPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <span className={cn(
-                        "inline-flex items-center justify-center min-w-[32px] rounded-sm px-1.5 py-0.5 text-xs font-medium border",
+                        "inline-flex items-center justify-center min-w-8 rounded-sm px-1.5 py-0.5 text-xs font-medium border",
                         (lead.lead_score || 0) >= 60 ? "bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20" :
                         (lead.lead_score || 0) >= 30 ? "bg-[#f39c12]/10 text-[#f39c12] border-[#f39c12]/20" :
                         "bg-[#e74c3c]/10 text-[#e74c3c] border-[#e74c3c]/20"

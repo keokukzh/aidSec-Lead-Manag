@@ -36,6 +36,11 @@ from api.schemas.email import (
     SequenceStats,
     EmailAnalyticsOverview,
     TemplateAnalytics,
+    EmailAnalyticsDashboard,
+    EmailAnalyticsByTemplateItem,
+    EmailAnalyticsTimelineItem,
+    EmailPreviewRequest,
+    EmailPreviewResponse,
 )
 
 from api.schemas.common import GenericResponse
@@ -376,9 +381,86 @@ def generate_email(payload: GenerateEmailRequest, db: Session = Depends(get_db))
 
     try:
         parsed = parse_llm_json(result["content"])
-        return {"success": True, "betreff": parsed.get("betreff", ""), "inhalt": parsed.get("inhalt", "")}
+        subject = parsed.get("betreff", "")
+        body = parsed.get("inhalt", "")
+        return {
+            "success": True,
+            "betreff": subject,
+            "inhalt": body,
+            "subject": subject,
+            "body": body,
+        }
     except Exception:
-        return {"success": True, "raw": result["content"]}
+        return {
+            "success": True,
+            "raw": result["content"],
+            "subject": "",
+            "body": result["content"],
+        }
+
+
+@router.post("/emails/preview", response_model=EmailPreviewResponse)
+def preview_email(payload: EmailPreviewRequest, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == payload.lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+
+    template = db.query(EmailTemplate).filter(EmailTemplate.id == payload.template_id).first()
+    if not template:
+        raise HTTPException(404, "Template not found")
+
+    full_name = (
+        getattr(lead, "ansprechpartner", None)
+        or getattr(lead, "name", None)
+        or ""
+    ).strip()
+    name_parts = full_name.split()
+    first_name = name_parts[0] if name_parts else ""
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    domain = ""
+    if lead.website:
+        try:
+            domain = lead.website.replace("https://", "").replace("http://", "").split("/")[0]
+        except Exception:
+            domain = lead.website
+
+    greeting = f"Sehr geehrte/r {full_name}" if full_name else "Sehr geehrte Damen und Herren"
+    grade = lead.ranking_grade or "?"
+    grade_note = f"Note {grade} (ungenügend)" if grade in ["F", "D"] else f"Note {grade}"
+
+    replacements = {
+        "{{first_name}}": first_name,
+        "{{last_name}}": last_name,
+        "{{name}}": full_name or (lead.firma or ""),
+        "{{company}}": lead.firma or "",
+        "{{domain}}": domain,
+        "{{grade}}": grade,
+        "{{grade_note}}": grade_note,
+        "{{date}}": datetime.utcnow().strftime("%Y-%m-%d"),
+        "{{personalized_greeting}}": greeting,
+    }
+
+    subject = template.betreff or ""
+    body = template.inhalt or ""
+    for placeholder, value in replacements.items():
+        subject = subject.replace(placeholder, value)
+        body = body.replace(placeholder, value)
+
+    if "<" in body and ">" in body:
+        html = body
+        plain = body.replace("<br>", "\n").replace("<br/>", "\n").replace("<p>", "").replace("</p>", "\n")
+    else:
+        plain = body
+        html = "<p>" + body.replace("\n", "<br/>") + "</p>"
+
+    return EmailPreviewResponse(
+        lead_id=lead.id,
+        template_id=template.id,
+        preview_type=payload.preview_type,
+        subject=subject,
+        html=html,
+        plain=plain,
+    )
 
 
 @router.get("/emails/templates", response_model=list[TemplateOut])
@@ -1457,23 +1539,103 @@ def get_template_analytics(db: Session = Depends(get_db)):
 @router.get("/emails/analytics/by-day")
 def get_analytics_by_day(days: int = 30, db: Session = Depends(get_db)):
     """Get email analytics grouped by day."""
-    from sqlalchemy import func, cast, Date
+    from sqlalchemy import func
 
     start_date = datetime.utcnow() - timedelta(days=days)
 
     results = db.query(
-        cast(EmailHistory.gesendet_at, Date).label("date"),
+        func.date(EmailHistory.gesendet_at).label("date"),
         func.count(EmailHistory.id).label("sent"),
     ).filter(
         EmailHistory.status == EmailStatus.SENT,
         EmailHistory.gesendet_at >= start_date
     ).group_by(
-        cast(EmailHistory.gesendet_at, Date)
+        func.date(EmailHistory.gesendet_at)
     ).order_by(
-        cast(EmailHistory.gesendet_at, Date)
+        func.date(EmailHistory.gesendet_at)
     ).all()
 
-    return [{"date": str(r[0]), "sent": r[1]} for r in results]
+    return [{"date": r[0], "sent": r[1]} for r in results]
+
+
+@router.get("/emails/analytics", response_model=EmailAnalyticsDashboard)
+def get_email_analytics_dashboard(days: int = 14, db: Session = Depends(get_db)):
+    """Unified analytics payload for email dashboard page."""
+    total_sent = db.query(EmailHistory).filter(EmailHistory.status == EmailStatus.SENT).count()
+    delivered = total_sent
+    bounced = db.query(EmailHistory).filter(EmailHistory.status == EmailStatus.FAILED).count()
+
+    opened = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.opened_at.isnot(None),
+    ).count()
+    clicked = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.clicked_at.isnot(None),
+    ).count()
+    replied = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.replied_at.isnot(None),
+    ).count()
+
+    rates = {
+        "open_rate": round((opened / max(1, delivered)) * 100, 1),
+        "click_rate": round((clicked / max(1, delivered)) * 100, 1),
+        "reply_rate": round((replied / max(1, delivered)) * 100, 1),
+        "bounce_rate": round((bounced / max(1, total_sent)) * 100, 1),
+    }
+
+    by_template: dict[str, EmailAnalyticsByTemplateItem] = {}
+    templates = db.query(EmailTemplate).all()
+    sent_emails = db.query(EmailHistory).filter(EmailHistory.status == EmailStatus.SENT).all()
+    for template in templates:
+        matched = [e for e in sent_emails if template.betreff and template.betreff in (e.betreff or "")]
+        sent = len(matched)
+        opened_count = sum(1 for e in matched if e.opened_at)
+        key = (template.kategorie.value if hasattr(template.kategorie, "value") else str(template.kategorie or "custom")).lower()
+        by_template[key] = EmailAnalyticsByTemplateItem(
+            sent=sent,
+            opened=opened_count,
+            rate=round((opened_count / max(1, sent)) * 100, 1),
+        )
+
+    day_rows = get_analytics_by_day(days=days, db=db)
+    start_date = datetime.utcnow() - timedelta(days=days)
+    open_rows = db.query(
+        EmailHistory.gesendet_at,
+        EmailHistory.opened_at,
+    ).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.gesendet_at >= start_date,
+    ).all()
+    opened_by_day: dict[str, int] = {}
+    for _sent_at, opened_at in open_rows:
+        if opened_at:
+            key = opened_at.date().isoformat()
+            opened_by_day[key] = opened_by_day.get(key, 0) + 1
+
+    timeline = [
+        EmailAnalyticsTimelineItem(
+            date=row["date"],
+            sent=row["sent"],
+            opened=opened_by_day.get(row["date"], 0),
+        )
+        for row in day_rows
+    ]
+
+    return EmailAnalyticsDashboard(
+        overview={
+            "total_sent": total_sent,
+            "delivered": delivered,
+            "opened": opened,
+            "clicked": clicked,
+            "replied": replied,
+            "bounced": bounced,
+        },
+        rates=rates,
+        by_template=by_template,
+        timeline=timeline,
+    )
 
 
 # ============ Tracking Endpoints ============

@@ -22,10 +22,11 @@ export default function ImportPage() {
         type: "success",
         text: `Erfolgreich ${result.imported || 0} Leads importiert`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       setMessage({
         type: "error",
-        text: error.message || "Import fehlgeschlagen",
+        text: err.message || "Import fehlgeschlagen",
       });
     } finally {
       setIsImporting(false);

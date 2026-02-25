@@ -6,6 +6,34 @@ interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+export interface DashboardKpisResponse {
+  status: Record<string, number>;
+  kategorie: Record<string, number>;
+  followups: { overdue: number; today: number; upcoming: number };
+  revenue: {
+    total_pipeline: number;
+    won_deals: number;
+    avg_deal_size: number;
+  };
+}
+
+export interface LeadListItem {
+  id: number;
+  firma: string | null;
+  name: string | null;
+  email: string | null;
+  telefon: string | null;
+  stadt: string | null;
+  quelle: string | null;
+  status: string;
+  kategorie: string | null;
+  ranking_score: number | null;
+  ranking_grade: string | null;
+  lead_score: number | null;
+  website: string | null;
+  created_at: string | null;
+}
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -75,11 +103,7 @@ export const authApi = {
 
 // Dashboard
 export const dashboardApi = {
-  getKpis: () => request<{
-    status: Record<string, number>;
-    kategorie: Record<string, number>;
-    followups: { overdue: number; today: number; upcoming: number };
-  }>("/dashboard/kpis"),
+  getKpis: () => request<DashboardKpisResponse>("/dashboard/kpis"),
 };
 
 // Leads
@@ -106,7 +130,7 @@ export const leadsApi = {
     if (params?.page) searchParams.set("page", String(params.page));
     if (params?.limit) searchParams.set("limit", String(params.limit));
     const query = searchParams.toString();
-    return request<{ items: unknown[]; total: number }>(
+    return request<{ items: LeadListItem[]; total: number }>(
       `/leads${query ? `?${query}` : ""}`
     ).then(res => ({
       leads: res.items || [],
@@ -242,13 +266,29 @@ export const emailsApi = {
     lead_id: string;
     campaign_id?: string;
     stufe?: number;
-  }) => request<{ subject: string; body: string }>("/emails/generate", {
+  }) => request<{ subject?: string; body?: string; betreff?: string; inhalt?: string }>("/emails/generate", {
     method: "POST",
     body: data,
-  }),
+  }).then((res) => ({
+    subject: res.subject ?? res.betreff ?? "",
+    body: res.body ?? res.inhalt ?? "",
+  })),
 
   send: (data: { lead_id: string; subject: string; body: string }) =>
     request<{ success: boolean; message: string }>("/emails/send", {
+      method: "POST",
+      body: data,
+    }),
+
+  preview: (data: { lead_id: number; template_id: number; preview_type: "desktop" | "mobile" | "plain" }) =>
+    request<{
+      lead_id: number;
+      template_id: number;
+      preview_type: string;
+      subject: string;
+      html: string;
+      plain: string;
+    }>("/emails/preview", {
       method: "POST",
       body: data,
     }),
@@ -268,13 +308,23 @@ export const emailsApi = {
     }>>("/emails/custom-templates"),
 
   createTemplate: (data: { name: string; betreff: string; inhalt: string; kategorie?: string }) =>
-    request<{ id: number }>("/emails/custom-templates", {
+    request<{
+      id: number;
+      name: string;
+      betreff: string;
+      inhalt: string;
+    }>("/emails/custom-templates", {
       method: "POST",
       body: data,
     }),
 
   updateTemplate: (id: number, data: { name?: string; betreff?: string; inhalt?: string; kategorie?: string }) =>
-    request<{ success: boolean }>(`/emails/custom-templates/${id}/extend`, {
+    request<{
+      id: number;
+      name: string;
+      betreff: string;
+      inhalt: string;
+    }>(`/emails/custom-templates/${id}/extend`, {
       method: "PATCH",
       body: data,
     }),
@@ -283,7 +333,12 @@ export const emailsApi = {
     request<void>(`/emails/custom-templates/${id}`, { method: "DELETE" }),
 
   duplicateTemplate: (id: number, newName: string) =>
-    request<{ id: number }>(`/emails/custom-templates/${id}/duplicate`, {
+    request<{
+      id: number;
+      name: string;
+      betreff: string;
+      inhalt: string;
+    }>(`/emails/custom-templates/${id}/duplicate`, {
       method: "POST",
       body: { new_name: newName },
     }),
@@ -294,6 +349,26 @@ export const emailsApi = {
     ),
 
   // Analytics
+  getAnalyticsDashboard: (days: number = 14) =>
+    request<{
+      overview: {
+        total_sent: number;
+        delivered: number;
+        opened: number;
+        clicked: number;
+        replied: number;
+        bounced: number;
+      };
+      rates: {
+        open_rate: number;
+        click_rate: number;
+        reply_rate: number;
+        bounce_rate: number;
+      };
+      by_template: Record<string, { sent: number; opened: number; rate: number }>;
+      timeline: Array<{ date: string; sent: number; opened: number }>;
+    }>(`/emails/analytics?days=${days}`),
+
   getAnalyticsOverview: () =>
     request<{
       total_sent: number;
@@ -381,23 +456,40 @@ export const emailsApi = {
       id: number;
       name: string;
       beschreibung?: string;
-      steps: Array<{ day_offset: number; template_id?: number; subject_override?: string }>;
+      steps: Array<{ day_offset: number; template_id?: number; subject_override?: string; body_override?: string }>;
       status: string;
       created_at: string;
+      updated_at?: string;
     }>>("/emails/sequences"),
 
   createSequence: (data: {
     name: string;
     beschreibung?: string;
-    steps: Array<{ day_offset: number; template_id?: number; subject_override?: string }>;
+    steps: Array<{ day_offset: number; template_id?: number; subject_override?: string; body_override?: string }>;
   }) =>
-    request<{ id: number }>("/emails/sequences", {
+    request<{
+      id: number;
+      name: string;
+      beschreibung?: string;
+      steps: Array<{ day_offset: number; template_id?: number; subject_override?: string; body_override?: string }>;
+      status: string;
+      created_at: string;
+      updated_at?: string;
+    }>("/emails/sequences", {
       method: "POST",
       body: data,
     }),
 
   updateSequence: (id: number, data: { name?: string; beschreibung?: string; steps?: unknown[]; status?: string }) =>
-    request<{ success: boolean }>(`/emails/sequences/${id}`, {
+    request<{
+      id: number;
+      name: string;
+      beschreibung?: string;
+      steps: Array<{ day_offset: number; template_id?: number; subject_override?: string; body_override?: string }>;
+      status: string;
+      created_at: string;
+      updated_at?: string;
+    }>(`/emails/sequences/${id}`, {
       method: "PATCH",
       body: data,
     }),

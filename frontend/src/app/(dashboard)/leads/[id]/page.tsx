@@ -89,7 +89,7 @@ export default function LeadDetailPage({ params }: PageProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => leadsApi.update(id, data),
+    mutationFn: (data: Partial<Lead>) => leadsApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lead", id] });
       setIsEditing(false);
@@ -104,14 +104,16 @@ export default function LeadDetailPage({ params }: PageProps) {
   });
 
   const handleOutlookDraft = async () => {
-    if (!lead || !(lead as any).email) return;
+    if (!lead) return;
+    const leadData = lead as Lead;
+    if (!leadData.email) return;
 
     setOutlookLoading(true);
     try {
       const result = await emailsApi.createOutlookDraft({
         lead_id: id,
-        subject: `Angebot für ${(lead as any).firma}`,
-        body: `<p>Sehr geehrte/r ${(lead as any).name},</p><p>...</p>`,
+        subject: `Angebot für ${leadData.firma}`,
+        body: `<p>Sehr geehrte/r ${leadData.name},</p><p>...</p>`,
       });
 
       if (result.success && result.web_link) {

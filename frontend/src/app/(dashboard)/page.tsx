@@ -37,6 +37,56 @@ interface Task {
   error_message: string | null;
 }
 
+const colorStyles: Record<string, {
+  text: string;
+  bgSoft: string;
+  bar: string;
+}> = {
+  "#00d4aa": {
+    text: "text-[#00d4aa]",
+    bgSoft: "bg-[#00d4aa15]",
+    bar: "bg-linear-to-r from-[#00d4aa33] to-[#00d4aa]",
+  },
+  "#3498db": {
+    text: "text-[#3498db]",
+    bgSoft: "bg-[#3498db15]",
+    bar: "bg-linear-to-r from-[#3498db33] to-[#3498db]",
+  },
+  "#2ecc71": {
+    text: "text-[#2ecc71]",
+    bgSoft: "bg-[#2ecc7115]",
+    bar: "bg-linear-to-r from-[#2ecc7133] to-[#2ecc71]",
+  },
+  "#9b59b6": {
+    text: "text-[#9b59b6]",
+    bgSoft: "bg-[#9b59b615]",
+    bar: "bg-linear-to-r from-[#9b59b633] to-[#9b59b6]",
+  },
+  "#e67e22": {
+    text: "text-[#e67e22]",
+    bgSoft: "bg-[#e67e2215]",
+    bar: "bg-linear-to-r from-[#e67e2233] to-[#e67e22]",
+  },
+  "#f1c40f": {
+    text: "text-[#f1c40f]",
+    bgSoft: "bg-[#f1c40f15]",
+    bar: "bg-linear-to-r from-[#f1c40f33] to-[#f1c40f]",
+  },
+};
+
+function getPalette(color: string) {
+  return colorStyles[color] || colorStyles["#3498db"];
+}
+
+function getWidthClass(value: number | null | undefined) {
+  const n = Number(value || 0);
+  if (n <= 0) return "w-0";
+  if (n < 25) return "w-1/4";
+  if (n < 50) return "w-1/2";
+  if (n < 75) return "w-3/4";
+  return "w-full";
+}
+
 export default function DashboardPage() {
   // Fetch overall KPIs
   const { data: kpis, isLoading: isKpisLoading } = useQuery({
@@ -190,7 +240,7 @@ export default function DashboardPage() {
                    <span className="font-mono text-sm text-[#00d4aa]">{metrics?.open_rate || 0}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#0e1117] rounded-full overflow-hidden">
-                  <div className="h-full bg-linear-to-r from-[#00d4aa33] to-[#00d4aa]" style={{ width: `${metrics?.open_rate || 0}%` }} />
+                  <div className={cn("h-full bg-linear-to-r from-[#00d4aa33] to-[#00d4aa]", getWidthClass(metrics?.open_rate))} />
                 </div>
               </div>
 
@@ -202,7 +252,7 @@ export default function DashboardPage() {
                    <span className="font-mono text-sm text-[#3498db]">{metrics?.reply_rate || 0}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#0e1117] rounded-full overflow-hidden">
-                  <div className="h-full bg-linear-to-r from-[#3498db33] to-[#3498db]" style={{ width: `${metrics?.reply_rate || 0}%` }} />
+                  <div className={cn("h-full bg-linear-to-r from-[#3498db33] to-[#3498db]", getWidthClass(metrics?.reply_rate))} />
                 </div>
               </div>
 
@@ -214,7 +264,7 @@ export default function DashboardPage() {
                    <span className="font-mono text-sm text-[#2ecc71]">{metrics?.conversion_rate || 0}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#0e1117] rounded-full overflow-hidden">
-                  <div className="h-full bg-linear-to-r from-[#2ecc7133] to-[#2ecc71]" style={{ width: `${metrics?.conversion_rate || 0}%` }} />
+                  <div className={cn("h-full bg-linear-to-r from-[#2ecc7133] to-[#2ecc71]", getWidthClass(metrics?.conversion_rate))} />
                 </div>
               </div>
             </div>
@@ -270,7 +320,7 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 {tasks?.map((task: Task) => (
                   <div key={task.id} className="flex items-center justify-between text-[0.7rem]">
-                    <span className="text-[#b8bec6] truncate max-w-[120px]">{task.lead_firma || 'System'}</span>
+                    <span className="text-[#b8bec6] truncate max-w-30">{task.lead_firma || 'System'}</span>
                     <span className={cn(
                       "px-1.5 py-0.5 rounded font-mono border",
                       task.status === 'completed' ? "bg-[#2ecc7115] text-[#2ecc71] border-[#2ecc7133]" :
@@ -328,11 +378,13 @@ interface MetricCardProps {
 }
 
 function MetricCard({ label, value, icon: Icon, trend, color }: MetricCardProps) {
+  const palette = getPalette(color);
+
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-[#2a3040] bg-[#1a1f2e] p-5 transition-all duration-300 hover:border-[#00d4aa33] hover:shadow-[0_0_20px_rgba(0,212,170,0.05)]">
       <div className="flex items-center justify-between mb-2">
         <div className="rounded-lg bg-[#0e1117] p-2">
-          <Icon className="h-4 w-4" style={{ color }} />
+          <Icon className={cn("h-4 w-4", palette.text)} />
         </div>
         {trend && (
           <span className="text-[0.65rem] font-mono text-[#2ecc71] flex items-center bg-[#2ecc7110] px-1.5 py-0.5 rounded">
@@ -342,9 +394,11 @@ function MetricCard({ label, value, icon: Icon, trend, color }: MetricCardProps)
       </div>
       <p className="text-[0.65rem] uppercase tracking-widest text-[#b8bec6] mb-1 font-medium">{label}</p>
       <p className="font-mono text-2xl font-bold text-[#e8eaed]">{value}</p>
-      <div 
-        className="absolute -right-4 -bottom-4 opacity-5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6"
-        style={{ color }}
+      <div
+        className={cn(
+          "absolute -right-4 -bottom-4 opacity-5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6",
+          palette.text,
+        )}
       >
         <Icon className="h-16 w-16" />
       </div>
@@ -361,11 +415,13 @@ interface CategoryCardProps {
 }
 
 function CategoryCard({ label, value, icon: Icon, color, tagline }: CategoryCardProps) {
+  const palette = getPalette(color);
+
   return (
     <div className="flex flex-col rounded-2xl border border-[#2a3040] bg-[#1a1f2e] p-4 group transition-colors hover:bg-[#1a1f2e]/80">
       <div className="flex items-center gap-3 mb-3">
-        <div className="rounded-xl p-2.5 transition-transform group-hover:scale-110" style={{ backgroundColor: `${color}15` }}>
-          <Icon className="h-5 w-5" style={{ color }} />
+        <div className={cn("rounded-xl p-2.5 transition-transform group-hover:scale-110", palette.bgSoft)}>
+          <Icon className={cn("h-5 w-5", palette.text)} />
         </div>
         <div>
           <p className="text-xs font-bold text-[#e8eaed] uppercase tracking-tight">{label}</p>
@@ -375,7 +431,7 @@ function CategoryCard({ label, value, icon: Icon, color, tagline }: CategoryCard
       <div className="flex items-end justify-between mt-auto">
         <p className="font-mono text-3xl font-bold text-[#e8eaed]">{value}</p>
         <div className="h-1 w-16 bg-[#0e1117] rounded-full overflow-hidden">
-           <div className="h-full opacity-50 transition-all duration-1000" style={{ backgroundColor: color, width: '60%' }} />
+           <div className={cn("h-full opacity-50 transition-all duration-1000 w-3/5", palette.bar)} />
         </div>
       </div>
     </div>

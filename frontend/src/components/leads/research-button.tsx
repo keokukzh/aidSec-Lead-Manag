@@ -29,7 +29,7 @@ export function ResearchButton({
 
   const mutation = useMutation({
     mutationFn: () => leadsApi.research(leadId),
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lead", leadId] });
       queryClient.invalidateQueries({ queryKey: ["leads"] });
       setShowResult(true);

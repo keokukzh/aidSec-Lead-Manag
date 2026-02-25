@@ -239,3 +239,37 @@ class TemplateAnalytics(BaseModel):
     open_rate: float
     click_rate: float
     response_rate: float
+
+
+class EmailAnalyticsByTemplateItem(BaseModel):
+    sent: int = 0
+    opened: int = 0
+    rate: float = 0.0
+
+
+class EmailAnalyticsTimelineItem(BaseModel):
+    date: str
+    sent: int = 0
+    opened: int = 0
+
+
+class EmailAnalyticsDashboard(BaseModel):
+    overview: dict
+    rates: dict
+    by_template: dict[str, EmailAnalyticsByTemplateItem]
+    timeline: list[EmailAnalyticsTimelineItem]
+
+
+class EmailPreviewRequest(BaseModel):
+    lead_id: int
+    template_id: int
+    preview_type: str = "desktop"  # desktop | mobile | plain
+
+
+class EmailPreviewResponse(BaseModel):
+    lead_id: int
+    template_id: int
+    preview_type: str
+    subject: str
+    html: str
+    plain: str

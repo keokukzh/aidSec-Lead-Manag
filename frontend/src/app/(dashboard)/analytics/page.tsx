@@ -3,13 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { analyticsApi, emailsApi } from "@/lib/api";
 import {
-  BarChart2,
-  Mail,
   MessageSquare,
   MousePointerClick,
   Send,
   Target,
-  Users,
 } from "lucide-react";
 
 export default function AnalyticsPage() {
