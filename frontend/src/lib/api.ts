@@ -53,6 +53,10 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     );
   }
 
+  if (response.status === 204) {
+    return {} as T;
+  }
+
   return response.json();
 }
 
@@ -174,6 +178,8 @@ export const campaignsApi = {
   delete: (id: string) =>
     request<unknown>(`/campaigns/${id}`, { method: "DELETE" }),
 };
+
+
 
 // Follow-ups
 export const followupsApi = {
@@ -468,6 +474,31 @@ export const importExportApi = {
 
 // Marketing
 export const marketingApi = {
+  deleteTracker: (trackerId: number) =>
+    request<void>(`/marketing/tracker/${trackerId}`, { method: "DELETE" }),
+
+  generate: (category?: string, intent?: string) =>
+    request<{ success: boolean; title: string; description: string; error?: string }>("/marketing/generate", {
+      method: "POST",
+      body: { category, intent }
+    }),
+
+  createTracker: (data: { custom_title: string; custom_description: string }) =>
+    request<unknown>("/marketing/tracker", {
+      method: "POST",
+      body: data
+    }),
+
+  optimize: (trackerId: number, currentTitle: string, currentDescription: string, category?: string) =>
+    request<unknown>(`/marketing/tracker/${trackerId}/optimize`, {
+      method: "POST",
+      body: {
+        current_title: currentTitle,
+        current_description: currentDescription,
+        category: category
+      }
+    }),
+
   listTracker: () => request<Array<{
     id: number;
     idea_number: number;
@@ -485,7 +516,7 @@ export const marketingApi = {
     if (params?.category) searchParams.set("category", params.category);
     if (params?.budget) searchParams.set("budget", params.budget);
     if (params?.search) searchParams.set("search", params.search);
-    return request<{ ideas: any[]; total: number }>(`/marketing/ideas${searchParams.toString() ? `?${searchParams.toString()}` : ""}`);
+    return request<{ ideas: Record<string, unknown>[]; total: number }>(`/marketing/ideas${searchParams.toString() ? `?${searchParams.toString()}` : ""}`);
   }
 };
 

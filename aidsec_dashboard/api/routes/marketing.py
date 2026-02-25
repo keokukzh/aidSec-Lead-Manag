@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, verify_api_key
-from api.schemas.common import MarketingTrackerOut, MarketingTrackerCreate, MarketingTrackerUpdate
+from api.schemas.common import MarketingTrackerOut, MarketingTrackerCreate, MarketingTrackerUpdate, MarketingGenerateRequest, MarketingOptimizeRequest
 from database.models import MarketingIdeaTracker
 
 router = APIRouter(tags=["marketing"], dependencies=[Depends(verify_api_key)])
@@ -40,22 +40,52 @@ def get_idea(nr: int):
     return idea
 
 
-@router.get("/marketing/tracker", response_model=list[MarketingTrackerOut])
+@router.get("/marketing/tracker")
 def list_tracker(db: Session = Depends(get_db)):
+    from services.marketing_ideas import get_idea_by_nr
     rows = db.query(MarketingIdeaTracker).order_by(MarketingIdeaTracker.prioritaet.desc()).all()
-    return [MarketingTrackerOut.model_validate(r) for r in rows]
+    
+    results = []
+    for r in rows:
+        data = MarketingTrackerOut.model_validate(r).model_dump()
+        idea_details = get_idea_by_nr(r.idea_number) if r.idea_number else None
+        if idea_details:
+            data["title"] = idea_details.get("name")
+            data["description"] = idea_details.get("desc")
+            data["category"] = idea_details.get("cat")
+        else:
+            data["title"] = r.custom_title
+            data["description"] = r.custom_description
+            data["category"] = "KI Idee"
+        results.append(data)
+        
+    return results
 
 
 @router.post("/marketing/tracker", response_model=MarketingTrackerOut, status_code=201)
 def add_to_tracker(payload: MarketingTrackerCreate, db: Session = Depends(get_db)):
-    existing = db.query(MarketingIdeaTracker).filter(
-        MarketingIdeaTracker.idea_number == payload.idea_number
-    ).first()
-    if existing:
-        raise HTTPException(409, "Idea already tracked")
+    if payload.idea_number is not None:
+        existing = db.query(MarketingIdeaTracker).filter(
+            MarketingIdeaTracker.idea_number == payload.idea_number
+        ).first()
+        if existing:
+            raise HTTPException(409, "Idea already tracked")
+        idea_num = payload.idea_number
+    else:
+        import random
+        while True:
+            idea_num = -random.randint(1, 1000000)
+            existing = db.query(MarketingIdeaTracker).filter(
+                MarketingIdeaTracker.idea_number == idea_num
+            ).first()
+            if not existing:
+                break
 
     tracker = MarketingIdeaTracker(
-        idea_number=payload.idea_number,
+        idea_number=idea_num,
+
+        custom_title=payload.custom_title,
+        custom_description=payload.custom_description,
         status=payload.status,
         notizen=payload.notizen,
         prioritaet=payload.prioritaet,
@@ -131,3 +161,54 @@ def recommend_ideas(db: Session = Depends(get_db)):
         return {"success": True, "recommendations": recommendations}
     except Exception:
         return {"success": True, "raw": result["content"]}
+
+
+@router.post("/marketing/generate")
+def generate_idea(payload: MarketingGenerateRequest, db: Session = Depends(get_db)):
+    from services.llm_service import get_llm_service
+    
+    llm = get_llm_service()
+    result = llm.generate_marketing_strategy(
+        category=payload.category,
+        intent=payload.intent
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "LLM unavailable"))
+        
+    return result
+
+
+@router.post("/marketing/tracker/{tracker_id}/optimize", response_model=MarketingTrackerOut)
+def optimize_tracker_idea(tracker_id: int, payload: MarketingOptimizeRequest, db: Session = Depends(get_db)):
+    t = db.query(MarketingIdeaTracker).filter(MarketingIdeaTracker.id == tracker_id).first()
+    if not t:
+        raise HTTPException(404, "Tracker entry not found")
+        
+    from services.llm_service import get_llm_service
+    llm = get_llm_service()
+    
+    result = llm.optimize_marketing_strategy(
+        current_title=payload.current_title,
+        current_description=payload.current_description,
+        category=payload.category
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(502, result.get("error", "LLM unavailable"))
+        
+    # Update the tracking record with the new description (which has actionable steps)
+    if "description" in result:
+        t.notizen = result["description"]
+        db.commit()
+        db.refresh(t)
+        
+    # We return the updated tracker record
+    from api.schemas.common import MarketingTrackerOut
+    
+    data = MarketingTrackerOut.model_validate(t).model_dump()
+    data["title"] = result.get("title", payload.current_title)
+    data["description"] = result.get("description", payload.current_description)
+    data["category"] = payload.category or ""
+    
+    return data

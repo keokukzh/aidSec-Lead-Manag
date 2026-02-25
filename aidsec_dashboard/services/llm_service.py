@@ -142,6 +142,22 @@ OPENING_ANGLES = {
     ],
 }
 
+MARKETING_STRATEGIST_SYSTEM_PROMPT = """Du bist ein Marketing-Stratege für AidSec (aidsec.ch), einem Schweizer IT-Sicherheitsunternehmen.
+Dein Ziel ist es, effektive Marketing-Strategien und Ideen zu generieren oder zu optimieren, 
+die auf spezifische Zielgruppen wie Anwälte, Arztpraxen oder WordPress-Agenturen zugeschnitten sind.
+
+STIL-REGELN:
+- Deutsch (Schweiz).
+- Professioneller, hochwertiger 'Swiss Intel' Tonfall (präzise, sicherheitsbewusst, vertrauenswürdig).
+- Strukturiere deine Antwort klar mit Mardown formatting (Titel, Aufzählungen).
+- Biete konkrete, umsetzbare Schritte (Actionable Steps).
+- Vermeide generische Ratschläge; nutze branchenspezifische Schmerzpunkte (z.B. nDSG bei medizinischen Daten, Anwaltsgeheimnis bei Kanzleien).
+
+Antworte NUR mit JSON im folgenden Format:
+{
+    "title": "Titel der Strategie",
+    "description": "Ausführliche Beschreibung mit Actionable Steps im Markdown-Format"
+}"""
 
 HEADER_PRIORITY = {
     "anwalt": [
@@ -793,15 +809,46 @@ Erstelle eine kurze Analyse (max 200 Wörter) mit:
 3. Risikobewertung: Hoch / Mittel / Niedrig
 4. 2-3 konkrete Empfehlungen
 
-Antworte NUR mit JSON:
-{{
-    "zusammenfassung": "...",
-    "schwachstellen": ["...", "..."],
-    "risiko": "Hoch|Mittel|Niedrig",
-    "empfehlungen": ["...", "..."]
-}}
+Erstelle die Antwort als JSON-Objekt mit den Feldern 'zusammenfassung', 'schwachstellen' (Liste), 'risiko' (Hoch|Mittel|Niedrig) und 'empfehlungen' (Liste).
 """
-        return self.chat(prompt, system_prompt)
+        return self.chat(prompt, system_prompt, max_tokens=1500)
+
+    def generate_marketing_strategy(self, category: str = None, intent: str = "Taktik") -> Dict:
+        """Generate a new marketing idea using the marketing-strategist skill profile."""
+        prompt = f"Generiere eine innovative Marketing-Idee für AidSec. Fokus: {category or 'Allgemein'}. Absicht: {intent}."
+        
+        response = self.chat(prompt, MARKETING_STRATEGIST_SYSTEM_PROMPT, max_tokens=1500)
+        
+        if not response.get("success"):
+            return {"success": False, "error": response.get("error")}
+            
+        from services.outreach import parse_llm_json
+        try:
+            data = parse_llm_json(response["content"])
+            return {"success": True, "title": data.get("title", "Neue Idee"), "description": data.get("description", "")}
+        except Exception as e:
+            return {"success": False, "error": str(e), "raw": response["content"]}
+
+    def optimize_marketing_strategy(self, current_title: str, current_description: str, category: str = None) -> Dict:
+        """Optimize an existing marketing idea with actionable steps."""
+        prompt = (
+            f"Optimiere diese bestehende Marketing-Idee und mach sie actionable. Fokus-Zielgruppe: {category or 'Allgemein'}.\n\n"
+            f"AKTUELLER TITEL: {current_title}\n"
+            f"AKTUELLE BESCHREIBUNG: {current_description}\n\n"
+            f"Formatiere die Rückgabe als weiterentwickelte, tiefergehende Strategie."
+        )
+        
+        response = self.chat(prompt, MARKETING_STRATEGIST_SYSTEM_PROMPT, max_tokens=1500)
+        
+        if not response.get("success"):
+            return {"success": False, "error": response.get("error")}
+            
+        from services.outreach import parse_llm_json
+        try:
+            data = parse_llm_json(response["content"])
+            return {"success": True, "title": data.get("title", current_title), "description": data.get("description", "")}
+        except Exception as e:
+            return {"success": False, "error": str(e), "raw": response["content"]}
 
     def search_leads(
         self,

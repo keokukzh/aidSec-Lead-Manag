@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/auth-store";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { rankingApi } from "@/lib/api";
+import { useState, useEffect } from "react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -43,6 +46,40 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const { logout } = useAuthStore();
+
+  const [rankingJobId, setRankingJobId] = useState<string | null>(null);
+
+  // Poll local storage to see if a background job was started
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const interval = setInterval(() => {
+       const jobId = localStorage.getItem("aidsec_ranking_job");
+       setRankingJobId(jobId);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const queryClient = useQueryClient();
+
+  const { data: jobStatus } = useQuery({
+    queryKey: ["ranking-job-sidebar", rankingJobId],
+    queryFn: () => rankingJobId ? rankingApi.getBatchStatus(rankingJobId) : null,
+    enabled: !!rankingJobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "done" || status === "failed") {
+        localStorage.removeItem("aidsec_ranking_job");
+        setRankingJobId(null);
+        if (status === "done") {
+          queryClient.invalidateQueries({ queryKey: ["ranking"] });
+        }
+        return false;
+      }
+      return status === "running" ? 2000 : false;
+    }
+  });
+
+  const isRankingRunning = jobStatus?.status === "running" || rankingJobId;
 
   return (
     <div className="flex h-full w-64 flex-col bg-linear-to-b from-[#141926] to-[#0e1117] border-r border-[#2a3040]">
@@ -79,7 +116,13 @@ export function Sidebar() {
               )}
             >
               <item.icon className="h-5 w-5" />
-              {item.name}
+              <span className="flex-1">{item.name}</span>
+              {item.name === "Ranking" && isRankingRunning && (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00d4aa] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00d4aa]"></span>
+                </span>
+              )}
             </Link>
           );
         })}

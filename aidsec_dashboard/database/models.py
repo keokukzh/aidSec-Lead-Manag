@@ -231,6 +231,8 @@ class MarketingIdeaTracker(Base):
     idea_number = Column(Integer, unique=True, nullable=False)
     status = Column(String(20), default="geplant")
     notizen = Column(Text, nullable=True)
+    custom_title = Column(String(255), nullable=True)
+    custom_description = Column(Text, nullable=True)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     prioritaet = Column(Integer, default=0)
     started_at = Column(DateTime, nullable=True)

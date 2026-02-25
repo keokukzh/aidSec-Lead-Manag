@@ -43,9 +43,10 @@ class MarketingTrackerOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    idea_number: int
     status: str
     notizen: Optional[str] = None
+    custom_title: Optional[str] = None
+    custom_description: Optional[str] = None
     campaign_id: Optional[int] = None
     prioritaet: int
     started_at: Optional[datetime] = None
@@ -54,7 +55,9 @@ class MarketingTrackerOut(BaseModel):
 
 
 class MarketingTrackerCreate(BaseModel):
-    idea_number: int
+    idea_number: Optional[int] = None
+    custom_title: Optional[str] = None
+    custom_description: Optional[str] = None
     status: str = "geplant"
     notizen: Optional[str] = None
     prioritaet: int = 0
@@ -65,6 +68,17 @@ class MarketingTrackerUpdate(BaseModel):
     notizen: Optional[str] = None
     prioritaet: Optional[int] = None
     campaign_id: Optional[int] = None
+
+
+class MarketingGenerateRequest(BaseModel):
+    category: Optional[str] = None
+    intent: Optional[str] = "Taktik"
+
+
+class MarketingOptimizeRequest(BaseModel):
+    current_title: str
+    current_description: str
+    category: Optional[str] = None
 
 
 class RankingCheckRequest(BaseModel):

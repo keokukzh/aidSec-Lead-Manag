@@ -243,19 +243,44 @@ class OutlookService:
             del _token_store_cache[user_email]
             self._save_tokens_to_db()
 
+    def _make_graph_request(self, method: str, endpoint: str, user_email: str = None, **kwargs) -> requests.Response:
+        """Helper to make a Graph API request and automatically refresh the token on 401."""
+        target_email = user_email
+        if target_email is None:
+            target_email = self.get_connected_user()
+            
+        token = self.get_user_token(target_email)
+        if not token:
+            # We will return a fake response with 401 to let the caller handle it
+            res = requests.Response()
+            res.status_code = 401
+            res._content = b'{"error": {"message": "No token available"}}'
+            return res
+
+        url = f"{self.graph_url}{endpoint}"
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {token}"
+        
+        try:
+            response = requests.request(method, url, headers=headers, **kwargs)
+            if response.status_code == 401:
+                # Token might have expired, attempt refresh
+                new_token = self.refresh_token(target_email)
+                if new_token:
+                    headers["Authorization"] = f"Bearer {new_token}"
+                    response = requests.request(method, url, headers=headers, **kwargs)
+            return response
+        except requests.exceptions.RequestException as e:
+            # Re-raise or let the caller handle it
+            raise e
+
     def test_connection(self, user_email: str = None) -> Dict:
         """Test the Outlook connection for a user"""
         if not self.is_configured():
             return {"success": False, "detail": "Outlook nicht konfiguriert"}
 
-        token = self.get_user_token(user_email)
-        if not token:
-            return {"success": False, "detail": "Nicht mit Outlook verbunden. Bitte verbinden Sie sich zuerst."}
-
-        headers = {"Authorization": f"Bearer {token}"}
-
         try:
-            response = requests.get(f"{self.graph_url}/me", headers=headers, timeout=10)
+            response = self._make_graph_request("GET", "/me", user_email=user_email, timeout=10)
             if response.status_code == 200:
                 user_info = response.json()
                 return {
@@ -263,6 +288,8 @@ class OutlookService:
                     "detail": f"Verbunden als {user_info.get('userPrincipalName')}",
                     "user_email": user_info.get("mail") or user_info.get("userPrincipalName")
                 }
+            elif response.status_code == 401:
+                return {"success": False, "detail": "Token abgelaufen - Bitte erneut verbinden"}
             else:
                 return {"success": False, "detail": f"HTTP {response.status_code}"}
         except requests.exceptions.RequestException as e:
@@ -280,15 +307,6 @@ class OutlookService:
         if not self.is_configured():
             return {"success": False, "error": "Outlook nicht konfiguriert"}
 
-        token = self.get_user_token(user_email)
-        if not token:
-            return {"success": False, "error": "Nicht mit Outlook verbunden"}
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
         message = {
             "subject": subject,
             "body": {
@@ -303,9 +321,10 @@ class OutlookService:
             ]
 
         try:
-            response = requests.post(
-                f"{self.graph_url}/me/messages",
-                headers=headers,
+            response = self._make_graph_request(
+                "POST", "/me/messages",
+                user_email=user_email,
+                headers={"Content-Type": "application/json"},
                 json=message,
                 timeout=30
             )
@@ -347,15 +366,6 @@ class OutlookService:
         if not self.is_configured():
             return {"success": False, "error": "Outlook nicht konfiguriert"}
 
-        token = self.get_user_token(user_email)
-        if not token:
-            return {"success": False, "error": "Nicht mit Outlook verbunden"}
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
         message = {
             "subject": subject,
             "body": {
@@ -368,9 +378,10 @@ class OutlookService:
         }
 
         try:
-            response = requests.post(
-                f"{self.graph_url}/me/sendMail",
-                headers=headers,
+            response = self._make_graph_request(
+                "POST", "/me/sendMail",
+                user_email=user_email,
+                headers={"Content-Type": "application/json"},
                 json={"message": message},
                 timeout=30
             )
@@ -395,21 +406,15 @@ class OutlookService:
         if not self.is_configured():
             return {"success": False, "error": "Outlook nicht konfiguriert"}
 
-        token = self.get_user_token(user_email)
-        if not token:
-            return {"success": False, "error": "Nicht mit Outlook verbunden"}
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
         try:
-            # Better to use the specific sentitems folder instead of filtering all messages
-            url = f"{self.graph_url}/me/mailFolders/sentitems/messages?$top={limit}&$orderby=sentDateTime desc"
-            response = requests.get(url, headers=headers, timeout=30)
+            endpoint = f"/me/mailFolders/sentitems/messages?$top={limit}&$orderby=sentDateTime desc"
+            response = self._make_graph_request(
+                "GET", endpoint,
+                user_email=user_email,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
             
-            print(f"DEBUG: get_sent_emails URL: {url}")
             print(f"DEBUG: get_sent_emails status: {response.status_code}")
 
             if response.status_code == 200:

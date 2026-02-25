@@ -40,6 +40,18 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+const getHostname = (url: string) => {
+  try {
+    return new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
+  } catch {
+    return url;
+  }
+};
+
+const getValidHref = (url: string) => {
+  return url.startsWith("http") ? url : `https://${url}`;
+};
+
 export default function LeadDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
@@ -159,13 +171,13 @@ export default function LeadDetailPage({ params }: PageProps) {
                 <>
                   <span>·</span>
                   <a
-                    href={l.website}
+                    href={getValidHref(l.website)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-[#00d4aa] hover:underline"
                   >
                     <ExternalLink className="h-3 w-3" />
-                    {new URL(l.website).hostname}
+                    {getHostname(l.website)}
                   </a>
                 </>
               )}
