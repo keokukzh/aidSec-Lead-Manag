@@ -38,6 +38,21 @@ NEXT_PUBLIC_API_URL=https://<BACKEND-DOMAIN>/api
 
 ## 2) Backend (Cloud)
 
+### Railway Build-Fehler "Error creating build plan with Railpack" beheben
+
+Dieses Repo enthält jetzt Root-Konfigurationen für Railway (`nixpacks.toml`, `railway.json`).
+Damit kann Railway auch dann korrekt bauen, wenn nicht manuell auf `aidsec_dashboard` als Root gestellt wurde.
+
+Wenn der Fehler weiterkommt:
+
+1. Railway Service öffnen → **Settings**
+2. **Builder** = `Nixpacks`
+3. **Watch Paths** optional auf `aidsec_dashboard/**` setzen
+4. **Clear Build Cache** ausführen
+5. **Redeploy (from latest commit)**
+
+Erwartung: Build-Plan wird erzeugt und Uvicorn-Start läuft über `$PORT`.
+
 Backend `.env` (Produktiv):
 
 ```env
@@ -54,6 +69,15 @@ SMTP_USERNAME=...
 SMTP_PASSWORD=...
 SMTP_FROM_NAME=AidSec
 SMTP_FROM_EMAIL=...
+```
+
+Minimal-Set, damit Deployment startet:
+
+```env
+APP_PASSWORD=<secure_password>
+API_KEY=<global_api_key>
+DATABASE_URL=postgresql+psycopg://<user>:<pass>@<host>:5432/<db>
+CORS_ORIGINS=https://aid-sec-lead-manag.vercel.app
 ```
 
 Start command:
@@ -126,3 +150,26 @@ Dann müssen Frontend-Zugriff und Agenten über deine Tailnet-Strategie gelöst 
 - [ ] `/api/health` = ok
 - [ ] `/api/tasks` erreichbar mit Auth
 - [ ] Beide Agenten laufen stabil (`agent_runner.py`)
+
+---
+
+## 6) Vercel ↔ Railway verbinden (konkret)
+
+1. Railway Domain kopieren (z. B. `https://aidsec-api-production.up.railway.app`)
+2. In Vercel Projekt → **Settings → Environment Variables** setzen:
+
+```env
+NEXT_PUBLIC_API_URL=https://aidsec-api-production.up.railway.app/api
+```
+
+3. Vercel redeployen (damit die Variable ins Build übernommen wird)
+4. Railway `CORS_ORIGINS` prüfen, dass Vercel-Domain drin ist:
+
+```env
+CORS_ORIGINS=https://aid-sec-lead-manag.vercel.app
+```
+
+5. End-to-End prüfen:
+	- Frontend lädt Login statt 404
+	- `https://<railway-domain>/api/health` gibt `status: ok`
+	- Browser DevTools zeigt keine CORS-Fehler

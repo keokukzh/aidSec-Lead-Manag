@@ -1,0 +1,14 @@
+[variables]
+PYTHONUNBUFFERED = "1"
+PIP_DISABLE_PIP_VERSION_CHECK = "1"
+
+[phases.setup]
+nixPkgs = ["python312", "gcc"]
+
+[phases.install]
+cmds = [
+  "cd aidsec_dashboard && pip install -r requirements.txt"
+]
+
+[start]
+cmd = "cd aidsec_dashboard && python -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"
