@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, verify_api_key
@@ -92,7 +93,7 @@ def pull_agent_task(
         .filter(
             AgentTask.status == "processing",
             AgentTask.lease_until.isnot(None),
-            AgentTask.lease_until < now,
+            func.datetime(AgentTask.lease_until) < func.datetime(now),
         )
         .all()
     )
@@ -117,7 +118,10 @@ def pull_agent_task(
         db.query(AgentTask)
         .filter(
             AgentTask.status == "pending",
-            (AgentTask.next_retry_at.is_(None)) | (AgentTask.next_retry_at <= now),
+            or_(
+                AgentTask.next_retry_at.is_(None),
+                func.datetime(AgentTask.next_retry_at) <= func.datetime(now),
+            ),
         )
         .order_by(AgentTask.created_at.asc())
         .first()
