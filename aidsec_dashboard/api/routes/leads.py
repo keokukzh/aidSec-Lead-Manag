@@ -21,12 +21,6 @@ from api.schemas.lead import (
     BulkStatusUpdate,
     BulkSecurityScanRequest,
 )
-    LeadUpdate,
-    LeadOut,
-    LeadDetail,
-    PaginatedLeads,
-    BulkStatusUpdate,
-)
 from database.models import (
     Lead,
     LeadStatus,

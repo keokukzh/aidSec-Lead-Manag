@@ -6,6 +6,11 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict
 
 
+class GenericResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+
+
 class FollowUpCreate(BaseModel):
     lead_id: int
     datum: datetime
