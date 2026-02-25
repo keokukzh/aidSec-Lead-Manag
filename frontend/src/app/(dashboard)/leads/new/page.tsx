@@ -14,6 +14,7 @@ export default function NewLeadPage() {
     name: "",
     email: "",
     telefon: "",
+    website: "",
     kategorie: "anwalt",
     status: "offen",
     notizen: "",
@@ -63,6 +64,8 @@ export default function NewLeadPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, firma: e.target.value })
                 }
+                title="Firma"
+                placeholder="Firmenname *"
                 className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               />
             </div>
@@ -75,6 +78,8 @@ export default function NewLeadPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
+                title="Name"
+                placeholder="Vollständiger Name *"
                 className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               />
             </div>
@@ -86,6 +91,8 @@ export default function NewLeadPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, email: e.target.value })
                 }
+                title="Email"
+                placeholder="email@beispiel.ch"
                 className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               />
             </div>
@@ -98,6 +105,20 @@ export default function NewLeadPage() {
                   setFormData({ ...formData, telefon: e.target.value })
                 }
                 className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
+                placeholder="+41 00 000 00 00"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[#b8bec6]">Website</label>
+              <input
+                type="url"
+                value={formData.website}
+                onChange={(e) =>
+                  setFormData({ ...formData, website: e.target.value })
+                }
+                title="Website"
+                placeholder="https://www.beispiel.ch"
+                className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
               />
             </div>
           </div>
@@ -109,6 +130,7 @@ export default function NewLeadPage() {
             <h2 className="mb-4 text-lg font-semibold text-[#e8eaed]">Status</h2>
             <select
               value={formData.status}
+              title="Status"
               onChange={(e) =>
                 setFormData({ ...formData, status: e.target.value })
               }
@@ -127,6 +149,7 @@ export default function NewLeadPage() {
             </h2>
             <select
               value={formData.kategorie}
+              title="Kategorie"
               onChange={(e) =>
                 setFormData({ ...formData, kategorie: e.target.value })
               }

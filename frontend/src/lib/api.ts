@@ -206,6 +206,22 @@ export const rankingApi = {
 
   analyze: (leadId: string) =>
     request<unknown>(`/ranking/check-lead/${leadId}`, { method: "POST" }),
+
+  batch: (leadIds: number[]) =>
+    request<{ job_id: string }>("/ranking/batch", {
+      method: "POST",
+      body: { lead_ids: leadIds }
+    }),
+
+  getBatchStatus: (jobId: string) =>
+    request<{
+      status: string;
+      total: number;
+      completed: number;
+      errors: number;
+      error?: string;
+      cancelled?: boolean;
+    }>(`/ranking/batch/${jobId}`),
 };
 
 // Emails
@@ -448,6 +464,29 @@ export const importExportApi = {
     const query = searchParams.toString();
     window.open(`${API_BASE_URL}/import/export/download${query ? `?${query}` : ""}`);
   },
+};
+
+// Marketing
+export const marketingApi = {
+  listTracker: () => request<Array<{
+    id: number;
+    idea_number: number;
+    status: string;
+    prioritaet: number;
+    notizen: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    title?: string;
+    description?: string;
+  }>>("/marketing/tracker"),
+
+  getIdeas: (params?: { category?: string; budget?: string; search?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set("category", params.category);
+    if (params?.budget) searchParams.set("budget", params.budget);
+    if (params?.search) searchParams.set("search", params.search);
+    return request<{ ideas: any[]; total: number }>(`/marketing/ideas${searchParams.toString() ? `?${searchParams.toString()}` : ""}`);
+  }
 };
 
 export { ApiError };

@@ -12,10 +12,29 @@ import {
   Save,
   Trash2,
   ExternalLink,
+  Search,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+
+interface Lead {
+  id: number;
+  firma: string | null;
+  name: string | null;
+  email: string | null;
+  telefon: string | null;
+  notes: string | null;
+  status: string | null;
+  kategorie: string | null;
+  ranking_score: number | null;
+  ranking_grade: string | null;
+  website: string | null;
+  wordpress_detected: string | null;
+  research_status: string | null;
+  research_last: string | null;
+}
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -26,12 +45,30 @@ export default function LeadDetailPage({ params }: PageProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<Partial<Lead>>({});
   const [outlookLoading, setOutlookLoading] = useState(false);
 
-  const { data: lead, isLoading, error } = useQuery({
+  const { data: lead, isLoading, error, refetch } = useQuery({
     queryKey: ["lead", id],
     queryFn: () => leadsApi.get(id),
+  });
+
+  const researchMutation = useMutation({
+    mutationFn: () => leadsApi.research(parseInt(id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead", id] });
+      alert("Research gestartet/abgeschlossen. Daten werden aktualisiert.");
+      refetch();
+    },
+    onError: (err: Error) => alert("Research fehlgeschlagen: " + err.message)
+  });
+
+  const generateEmailMutation = useMutation({
+    mutationFn: () => emailsApi.generate({ lead_id: id, stufe: 1 }),
+    onSuccess: () => {
+      router.push(`/email?lead=${id}`);
+    },
+    onError: (err: Error) => alert("KI E-Mail fehlgeschlagen: " + err.message)
   });
 
   const { data: outlookStatus } = useQuery({
@@ -70,8 +107,9 @@ export default function LeadDetailPage({ params }: PageProps) {
       } else {
         alert(result.error || "Fehler beim Erstellen des Entwurfs");
       }
-    } catch (err: any) {
-      alert(err.message || "Fehler beim Erstellen des Entwurfs");
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(error.message || "Fehler beim Erstellen des Entwurfs");
     } finally {
       setOutlookLoading(false);
     }
@@ -96,7 +134,7 @@ export default function LeadDetailPage({ params }: PageProps) {
     );
   }
 
-  const l = lead as any;
+  const l = lead as Lead;
 
   return (
     <div className="space-y-6">
@@ -113,9 +151,25 @@ export default function LeadDetailPage({ params }: PageProps) {
             <h1 className="text-2xl font-bold text-[#e8eaed]">
               {l.firma || "Lead-Detail"}
             </h1>
-            <p className="text-[#b8bec6]">
-              {l.name} · {l.email}
-            </p>
+            <div className="flex items-center gap-2 text-[#b8bec6]">
+              <span>{l.name}</span>
+              <span>·</span>
+              <span>{l.email}</span>
+              {l.website && (
+                <>
+                  <span>·</span>
+                  <a
+                    href={l.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[#00d4aa] hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {new URL(l.website).hostname}
+                  </a>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
@@ -148,6 +202,8 @@ export default function LeadDetailPage({ params }: PageProps) {
                   }
                   disabled={!isEditing}
                   className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none disabled:opacity-50"
+                  title="Firma"
+                  placeholder="Firmenname"
                 />
               </div>
               <div>
@@ -160,6 +216,8 @@ export default function LeadDetailPage({ params }: PageProps) {
                   }
                   disabled={!isEditing}
                   className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none disabled:opacity-50"
+                  title="Name"
+                  placeholder="Vollständiger Name"
                 />
               </div>
               <div>
@@ -172,6 +230,8 @@ export default function LeadDetailPage({ params }: PageProps) {
                   }
                   disabled={!isEditing}
                   className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none disabled:opacity-50"
+                  title="Email"
+                  placeholder="email@beispiel.ch"
                 />
               </div>
               <div>
@@ -184,6 +244,22 @@ export default function LeadDetailPage({ params }: PageProps) {
                   }
                   disabled={!isEditing}
                   className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none disabled:opacity-50"
+                  title="Telefon"
+                  placeholder="+41 00 000 00 00"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm text-[#b8bec6]">Website</label>
+                <input
+                  type="url"
+                  value={isEditing ? (formData.website ?? l.website ?? "") : (l.website ?? "")}
+                  onChange={(e) =>
+                    setFormData({ ...formData, website: e.target.value })
+                  }
+                  disabled={!isEditing}
+                  className="mt-1 w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none disabled:opacity-50"
+                  title="Website"
+                  placeholder="https://www.beispiel.ch"
                 />
               </div>
             </div>
@@ -201,6 +277,7 @@ export default function LeadDetailPage({ params }: PageProps) {
               rows={6}
               className="w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none disabled:opacity-50"
               placeholder="Notizen zum Lead..."
+              title="Notizen"
             />
           </div>
         </div>
@@ -212,6 +289,7 @@ export default function LeadDetailPage({ params }: PageProps) {
             <h2 className="mb-4 text-lg font-semibold text-[#e8eaed]">Status</h2>
             <select
               value={isEditing ? (formData.status ?? l.status ?? "offen") : (l.status ?? "offen")}
+              title="Status ändern"
               onChange={(e) =>
                 setFormData({ ...formData, status: e.target.value })
               }
@@ -230,6 +308,7 @@ export default function LeadDetailPage({ params }: PageProps) {
             <h2 className="mb-4 text-lg font-semibold text-[#e8eaed]">Kategorie</h2>
             <select
               value={isEditing ? (formData.kategorie ?? l.kategorie ?? "anwalt") : (l.kategorie ?? "anwalt")}
+              title="Kategorie ändern"
               onChange={(e) =>
                 setFormData({ ...formData, kategorie: e.target.value })
               }
@@ -257,6 +336,38 @@ export default function LeadDetailPage({ params }: PageProps) {
             </div>
           )}
 
+          {/* Website Analyse */}
+          <div className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-6">
+            <h2 className="mb-4 text-lg font-semibold text-[#e8eaed]">Website-Analyse</h2>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-[#b8bec6]">CMS:</span>
+                <span className="text-[#e8eaed font-medium">
+                  {l.wordpress_detected || "Unbekannt"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-[#b8bec6]">Research-Status:</span>
+                <span className={cn(
+                  "px-2 py-0.5 rounded text-[10px] uppercase font-bold",
+                  l.research_status === "completed" ? "bg-green-500/20 text-green-400" : 
+                  l.research_status === "in_progress" ? "bg-blue-500/20 text-blue-400" :
+                  "bg-gray-500/20 text-gray-400"
+                )}>
+                  {l.research_status || "Ausstehend"}
+                </span>
+              </div>
+              {l.research_last && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-[#b8bec6]">Letzte Prüfung:</span>
+                  <span className="text-[#e8eaed] text-[10px]">
+                    {new Date(l.research_last).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Actions */}
           <div className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-6">
             <h2 className="mb-4 text-lg font-semibold text-[#e8eaed]">Aktionen</h2>
@@ -283,6 +394,33 @@ export default function LeadDetailPage({ params }: PageProps) {
                 )}
                 In Outlook öffnen
               </button>
+
+              <div className="pt-2 border-t border-[#2a3040] mt-2 space-y-2">
+                <button
+                  onClick={() => researchMutation.mutate()}
+                  disabled={researchMutation.isPending}
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-[#00d4aa] px-4 py-2 text-[#00d4aa] hover:bg-[#00d4aa11] disabled:opacity-50"
+                >
+                  {researchMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  Daten-Research Agent
+                </button>
+                <button
+                  onClick={() => generateEmailMutation.mutate()}
+                  disabled={generateEmailMutation.isPending}
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-[#a855f7] px-4 py-2 text-[#a855f7] hover:bg-[#a855f711] disabled:opacity-50"
+                >
+                  {generateEmailMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  KI E-Mail erstellen
+                </button>
+              </div>
               {!outlookStatus?.configured && (
                 <p className="text-xs text-[#b8bec6] text-center mt-2">
                   Outlook nicht konfiguriert
