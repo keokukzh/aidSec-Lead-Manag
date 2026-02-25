@@ -4,26 +4,47 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from database.models import Base
 
-# Database path
+# Default SQLite database path (local fallback)
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "leads.db")
 DB_PATH = os.path.abspath(DB_PATH)
 
 # Ensure data directory exists
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-# Create engine with connection pooling for concurrent access
-engine = create_engine(
-    f"sqlite:///{DB_PATH}",
-    echo=False,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
-    connect_args={"check_same_thread": False},
-)
+
+def _normalize_database_url(raw_url: str | None) -> str:
+    if not raw_url:
+        return f"sqlite:///{DB_PATH}"
+
+    url = raw_url.strip()
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://") and "+psycopg" not in url:
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+DATABASE_URL = _normalize_database_url(os.getenv("DATABASE_URL"))
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+# Create engine with environment-aware options
+engine_kwargs = {
+    "echo": False,
+    "pool_pre_ping": True,
+    "pool_size": 5,
+    "max_overflow": 10,
+}
+
+if IS_SQLITE:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 
 @event.listens_for(engine, "connect")
 def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    if not IS_SQLITE:
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA busy_timeout=30000")
@@ -39,6 +60,9 @@ def _column_exists(conn, table_name: str, column_name: str) -> bool:
 
 def _ensure_legacy_columns():
     """Best-effort migration for older SQLite databases without Alembic."""
+    if not IS_SQLITE:
+        return
+
     statements: list[tuple[str, str, str]] = [
         ("email_history", "ab_test_id", "ALTER TABLE email_history ADD COLUMN ab_test_id INTEGER"),
         ("email_history", "ab_variant", "ALTER TABLE email_history ADD COLUMN ab_variant VARCHAR(1)"),
@@ -85,4 +109,5 @@ def get_session() -> Session:
 def init_db():
     """Initialize the database (create all tables)"""
     Base.metadata.create_all(bind=engine)
-    _ensure_legacy_columns()
+    if IS_SQLITE:
+        _ensure_legacy_columns()

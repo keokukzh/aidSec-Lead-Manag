@@ -62,3 +62,34 @@ python -m uvicorn api.main:app --reload
 - **Frontend:** Next.js 14, React, TypeScript, Tailwind CSS, Zustand, TanStack Query
 - **Backend:** FastAPI, SQLAlchemy, SQLite
 - **Auth:** Session-basiert mit Passwort
+
+## Deployment (Vercel)
+
+### 1) Frontend auf Vercel deployen
+
+1. Repository in Vercel importieren
+2. Root Directory auf `frontend` setzen
+3. Build-Settings automatisch übernehmen (`vercel.json`)
+4. Environment Variable in Vercel setzen:
+
+```env
+NEXT_PUBLIC_API_URL=https://<YOUR-BACKEND-DOMAIN>/api
+```
+
+### 2) Backend separat deployen
+
+Das FastAPI Backend muss als eigener Service laufen (z. B. Railway/Render/Fly/VM), weil Vercel hier nur das Next.js Frontend hostet.
+
+Backend-Umgebungsvariablen mindestens:
+
+```env
+API_KEY=<global_api_key>
+APP_PASSWORD=<dashboard_password>
+DATABASE_URL=postgresql+psycopg://<user>:<pass>@<host>:5432/<db>
+CORS_ORIGINS=https://<YOUR-VERCEL-DOMAIN>
+AGENT_API_KEYS=agent1=<secret1>,agent2=<secret2>
+```
+
+### 3) Zugriff von unterwegs
+
+Sobald Frontend (Vercel) und Backend (Cloud-Service) online sind, ist das Dashboard weltweit unter deiner Vercel-Domain erreichbar.
