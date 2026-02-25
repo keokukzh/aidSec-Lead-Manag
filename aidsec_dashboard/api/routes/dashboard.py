@@ -17,6 +17,7 @@ from api.schemas.dashboard import (
     ConversionRates,
     GradeDistribution,
     EmailStats,
+    RevenueKPIs,
     CampaignKPIs,
     MarketingKPIs,
     FollowUpCounts,
@@ -47,15 +48,31 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
     status_map = {r[0].value if hasattr(r[0], "value") else str(r[0]): r[1] for r in status_rows}
     offen = status_map.get("offen", 0)
     pending = status_map.get("pending", 0)
+    response_received = status_map.get("response_received", 0)
+    offer_sent = status_map.get("offer_sent", 0)
+    negotiation = status_map.get("negotiation", 0)
     gewonnen = status_map.get("gewonnen", 0)
     verloren = status_map.get("verloren", 0)
-    total = offen + pending + gewonnen + verloren
+    
+    total = sum(status_map.values())
 
     kat_rows = db.query(Lead.kategorie, func.count()).group_by(Lead.kategorie).all()
     kat_map = {r[0].value if hasattr(r[0], "value") else str(r[0]): r[1] for r in kat_rows}
     anwalt = kat_map.get("anwalt", 0)
     praxis = kat_map.get("praxis", 0)
     wordpress = kat_map.get("wordpress", 0)
+    
+    # --- Revenue / Pipeline Stats ---
+    # Everything but OFFEN and VERLOREN is considered "pipeline" basically
+    # Or more strictly, only offer_sent and negotiation? We'll sum all non-won/lost for total pipeline
+    pipeline_amount = db.query(func.sum(Lead.deal_size)).filter(
+        Lead.status.in_([LeadStatus.OFFER_SENT, LeadStatus.NEGOTIATION])
+    ).scalar() or 0
+    won_amount = db.query(func.sum(Lead.deal_size)).filter(Lead.status == LeadStatus.GEWONNEN).scalar() or 0
+    
+    # Calculate averages
+    won_count = gewonnen
+    avg_deal_size = int(won_amount / won_count) if won_count > 0 else 0
 
     # --- Weekly stats (3 queries -> stays 3, they have different tables/filters) ---
     week_ago = datetime.utcnow() - timedelta(days=7)
@@ -98,6 +115,14 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
         or 0
     )
     success_rate = round(won_and_contacted / max(1, contacted) * 100, 1)
+    
+    # Extended Email Stats (Feature 5)
+    # Estimate response rate and conversion rate 
+    responded_leads = response_received + offer_sent + negotiation + gewonnen
+    response_rate = round(responded_leads / max(1, total_sent) * 100, 1)
+    conversion_rate = round(gewonnen / max(1, contacted) * 100, 1)
+    
+    avg_response_time = db.query(func.avg(Lead.response_time_hours)).filter(Lead.response_time_hours > 0).scalar() or 0
 
     # --- Campaign stats (combine into fewer queries) ---
     camp_agg = db.query(
@@ -144,7 +169,11 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
     upcoming = int(fu_agg[2] or 0)
 
     return DashboardKPIs(
-        status=StatusCounts(total=total, offen=offen, pending=pending, gewonnen=gewonnen, verloren=verloren),
+        status=StatusCounts(
+            total=total, offen=offen, pending=pending,
+            response_received=response_received, offer_sent=offer_sent,
+            negotiation=negotiation, gewonnen=gewonnen, verloren=verloren
+        ),
         kategorie=KategorieCounts(anwalt=anwalt, praxis=praxis, wordpress=wordpress),
         weekly=WeeklyDelta(new_this_week=new_this_week, won_this_week=won_this_week, lost_this_week=lost_this_week),
         conversion=ConversionRates(
@@ -154,6 +183,13 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
         email_stats=EmailStats(
             total_sent=total_sent, leads_contacted=contacted,
             avg_per_lead=avg_per_lead, success_rate=success_rate,
+            response_rate=response_rate, conversion_rate=conversion_rate,
+            avg_response_time_hours=round(avg_response_time, 1)
+        ),
+        revenue=RevenueKPIs(
+            total_pipeline=int(pipeline_amount),
+            won_deals=int(won_amount),
+            avg_deal_size=avg_deal_size
         ),
         campaign=CampaignKPIs(
             total_campaigns=total_camp, active_campaigns=active_camp,

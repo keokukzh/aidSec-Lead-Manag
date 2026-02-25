@@ -8,6 +8,9 @@ class StatusCounts(BaseModel):
     total: int
     offen: int
     pending: int
+    response_received: int
+    offer_sent: int
+    negotiation: int
     gewonnen: int
     verloren: int
 
@@ -43,6 +46,15 @@ class EmailStats(BaseModel):
     leads_contacted: int
     avg_per_lead: float
     success_rate: float
+    response_rate: float
+    conversion_rate: float
+    avg_response_time_hours: float
+
+
+class RevenueKPIs(BaseModel):
+    total_pipeline: int
+    won_deals: int
+    avg_deal_size: int
 
 
 class CampaignKPIs(BaseModel):
@@ -73,6 +85,7 @@ class DashboardKPIs(BaseModel):
     conversion: ConversionRates
     grades: GradeDistribution
     email_stats: EmailStats
+    revenue: RevenueKPIs
     campaign: CampaignKPIs
     marketing: MarketingKPIs
     followups: FollowUpCounts

@@ -13,6 +13,7 @@ from api.dependencies import get_db, verify_api_key
 from api.schemas.email import (
     SendEmailRequest,
     BulkSendRequest,
+    BulkPreviewRequest,
     EmailHistoryOut,
     GenerateEmailRequest,
     SmtpTestResult,
@@ -23,6 +24,8 @@ from api.schemas.email import (
     DraftUpdateRequest,
     BulkDraftApproveRequest,
 )
+
+from api.schemas.common import GenericResponse
 from database.models import (
     Lead,
     LeadStatus,
@@ -191,10 +194,65 @@ def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl
         session.close()
 
 
+# Predefined templates per feature request
+BULK_TEMPLATES = {
+    "praxis": {
+        "subject": "Sicherheit Ihrer Praxis-Website {firma}",
+        "body": "Guten Tag {firma},\n\nwir haben festgestellt, dass Ihre Praxis-Website ({website}) beim Security-Scan die Note {ranking_grade} erhalten hat.\n\nGerne unterstützen wir Sie bei der Behebung.\n\nViele Grüße"
+    },
+    "kanzlei": {
+        "subject": "IT-Sicherheit für Kanzlei {firma}",
+        "body": "Guten Tag {firma},\n\nals Kanzlei haben Sie besondere Anforderungen an den Datenschutz. Ihre Website ({website}) weist mit Note {ranking_grade} Mängel auf.\n\nWir beraten Sie gerne unverbindlich."
+    },
+    "kanzlei_spezial": {
+        "subject": "Dringende Sicherheitslücken auf {website}",
+        "body": "Sehr geehrte Damen und Herren von {firma},\n\nIhre professionelle Kanzlei-Website hat beim Security Scan lediglich ein {ranking_grade} erzielt. Um Reputationsschäden zu vermeiden, empfehlen wir ein zeitnahes Update.\n\nFreundliche Grüße"
+    }
+}
+
+
+@router.post("/emails/bulk-preview")
+def preview_bulk_send(payload: BulkPreviewRequest, db: Session = Depends(get_db)):
+    """Generate previews for bulk sending."""
+    from database.models import Lead
+    template_data = BULK_TEMPLATES.get(payload.template)
+    if not template_data:
+        raise HTTPException(400, f"Template {payload.template} not found")
+
+    leads = db.query(Lead).filter(Lead.id.in_(payload.lead_ids)).all()
+    previews = []
+
+    for lead in leads:
+        variables = {
+            "firma": lead.firma or "Damen und Herren",
+            "stadt": lead.stadt or "Ihrer Region",
+            "website": lead.website or "",
+            "ranking_grade": lead.ranking_grade or "?",
+            "ranking_score": str(lead.ranking_score or "?"),
+        }
+        
+        body = template_data["body"]
+        subject = template_data["subject"]
+        
+        for k, v in variables.items():
+            body = body.replace(f"{{{k}}}", v)
+            subject = subject.replace(f"{{{k}}}", v)
+
+        previews.append({
+            "lead_id": lead.id,
+            "subject": subject,
+            "body": body,
+            "email": lead.email
+        })
+
+    return {"template": payload.template, "previews": previews}
+
+
 @router.post("/emails/bulk-send")
 def start_bulk_send(
     payload: BulkSendRequest,
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
 ):
     job_id = str(uuid.uuid4())[:8]
     _bulk_email_jobs[job_id] = {
@@ -204,13 +262,19 @@ def start_bulk_send(
         "sent": 0,
         "errors": 0,
     }
+    
+    subject = payload.subject
+    body = payload.body
+    
+    if payload.template and payload.template in BULK_TEMPLATES:
+        subject = BULK_TEMPLATES[payload.template]["subject"]
+        body = BULK_TEMPLATES[payload.template]["body"]
+        
     background_tasks.add_task(
         _run_bulk_email, job_id, payload.lead_ids,
-        getattr(payload, "subject", ""), getattr(payload, "body", ""),
-        payload.delay_seconds,
+        subject, body, payload.delay_seconds
     )
-    return {"job_id": job_id}
-
+    return {"job_id": job_id, "status": "started"}
 
 @router.get("/emails/bulk-send/{job_id}")
 def bulk_send_status(job_id: str):
@@ -829,6 +893,29 @@ def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
         "skipped": skipped,
         "errors": errors[:5] if errors else None
     }
+
+
+@router.post("/emails/outlook/refresh", response_model=GenericResponse)
+def refresh_outlook_token():
+    """Manual trigger to refresh Outlook OAuth token"""
+    svc = get_outlook_service()
+    if not svc.is_configured():
+        raise HTTPException(400, "Outlook is not configured.")
+    
+    connected_user = svc.get_connected_user()
+    if not connected_user:
+        raise HTTPException(400, "No connected Outlook user found.")
+        
+    new_token = svc.refresh_token(connected_user)
+    if new_token:
+        # We also trigger a test connection to ensure it was cached property
+        conn = svc.test_connection(connected_user)
+        if conn.get("success"):
+            return GenericResponse(success=True, message="Token successfully refreshed.")
+        else:
+            return GenericResponse(success=False, message="Token refreshed but connection test failed.")
+    
+    raise HTTPException(401, "Failed to refresh token. Please re-authenticate.")
 
 
 @router.get("/emails/synced")

@@ -10,6 +10,9 @@ Base = declarative_base()
 class LeadStatus(str, enum.Enum):
     OFFEN = "offen"
     PENDING = "pending"
+    RESPONSE_RECEIVED = "response_received"
+    OFFER_SENT = "offer_sent"
+    NEGOTIATION = "negotiation"
     GEWONNEN = "gewonnen"
     VERLOREN = "verloren"
 
@@ -47,6 +50,10 @@ class Lead(Base):
     stadt = Column(String(100), nullable=True)
     kategorie = Column(SQLEnum(LeadKategorie), default=LeadKategorie.ANWALT)
     status = Column(SQLEnum(LeadStatus), default=LeadStatus.OFFEN)
+    
+    # Financials & Stats
+    deal_size = Column(Integer, nullable=True, default=0)
+    response_time_hours = Column(Integer, nullable=True, default=0)
 
     # Ranking
     ranking_score = Column(Integer, nullable=True)

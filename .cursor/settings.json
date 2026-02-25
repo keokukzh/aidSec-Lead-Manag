@@ -2,6 +2,12 @@
   "plugins": {
     "superpowers": {
       "enabled": true
+    },
+    "functions": {
+      "enabled": true
+    },
+    "context7-plugin": {
+      "enabled": true
     }
   }
 }

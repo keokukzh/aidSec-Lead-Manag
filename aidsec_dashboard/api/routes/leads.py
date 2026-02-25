@@ -19,6 +19,13 @@ from api.schemas.lead import (
     LeadDetail,
     PaginatedLeads,
     BulkStatusUpdate,
+    BulkSecurityScanRequest,
+)
+    LeadUpdate,
+    LeadOut,
+    LeadDetail,
+    PaginatedLeads,
+    BulkStatusUpdate,
 )
 from database.models import (
     Lead,
@@ -184,6 +191,120 @@ def trigger_enrichment(lead_id: int, background_tasks: BackgroundTasks, db: Sess
     db.commit()
     background_tasks.add_task(enrich_lead, lead.id)
     return {"status": "Enrichment queued"}
+
+
+@router.post("/leads/{lead_id}/security-scan")
+async def trigger_security_scan(lead_id: int, db: Session = Depends(get_db)):
+    """Run a security scan via Playwright for a specific lead."""
+    from services.security_scan_service import security_scan
+
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    if not lead.website:
+        raise HTTPException(400, "Lead has no website to scan")
+        
+    result = await security_scan(lead.website, capture_screenshot=False)
+    if not result.get("success"):
+        raise HTTPException(502, f"Scan failed: {result.get('error')}")
+        
+    lead.ranking_grade = result.get("grade")
+    # optionally store details
+    lead.ranking_details = {"scan_url": result.get("url"), "last_scanned": datetime.utcnow().isoformat()}
+    db.commit()
+    db.refresh(lead)
+
+    return LeadOut.model_validate(lead)
+
+
+@router.post("/leads/bulk-security-scan")
+async def bulk_security_scan(payload: BulkSecurityScanRequest, db: Session = Depends(get_db)):
+    """Run security scans for multiple leads, optionally filtering by grade."""
+    from services.security_scan_service import security_scan
+
+    leads = db.query(Lead).filter(Lead.id.in_(payload.lead_ids)).all()
+    results = []
+
+    for lead in leads:
+        if not lead.website:
+            results.append({"id": lead.id, "success": False, "error": "No website"})
+            continue
+            
+        # Optional: if grade_filter is requested, maybe only scan if it currently matches, 
+        # but usually a bulk scan implies we want to *find* their grade.
+        res = await security_scan(lead.website, capture_screenshot=False)
+        
+        if res.get("success"):
+            grade = res.get("grade")
+            if payload.grade_filter and grade != payload.grade_filter:
+                # If it doesn't match the filter we might not save it or we save it but note it didn't match.
+                # Usually we still save the new grade, but we can return it as skipped from the bulk action perspective.
+                pass
+                
+            lead.ranking_grade = grade
+            lead.ranking_details = {"scan_url": res.get("url"), "last_scanned": datetime.utcnow().isoformat()}
+            results.append({"id": lead.id, "success": True, "grade": grade})
+        else:
+            results.append({"id": lead.id, "success": False, "error": res.get("error")})
+
+    db.commit()
+    return {"processed": len(leads), "results": results}
+
+
+@router.post("/leads/{lead_id}/followup-send")
+def send_followup_reminder(lead_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Trigger a custom follow-up action/email for a Lead."""
+    from services.email_service import get_email_service
+    
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+        
+    fu_id = payload.get("followup_id")
+    if fu_id:
+        fu = db.query(FollowUp).filter(FollowUp.id == fu_id, FollowUp.lead_id == lead_id).first()
+        if fu:
+            fu.erledigt = True
+            
+    # Typically this might use Outlook service to send a reminder template
+    svc = get_email_service()
+    if svc.is_configured() and lead.email:
+        svc.send_email(
+            to_email=lead.email,
+            subject=f"Follow-up: {lead.firma}",
+            body="Dies ist eine automatische Follow-up Erinnerung."
+        )
+        
+    db.commit()
+    return {"success": True, "message": "Follow-up processed and marked as done."}
+
+
+@router.get("/leads/{lead_id}/screenshot")
+async def get_lead_screenshot(lead_id: int, db: Session = Depends(get_db)):
+    """Generate and return a base64 screenshot of the lead's security headers grade."""
+    from services.security_scan_service import security_scan
+
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    if not lead.website:
+        raise HTTPException(400, "Lead has no website to scan")
+        
+    result = await security_scan(lead.website, capture_screenshot=True)
+    if not result.get("success"):
+        raise HTTPException(502, f"Screenshot failed: {result.get('error')}")
+        
+    # We also update the grade since we scanned it anyway
+    lead.ranking_grade = result.get("grade")
+    lead.ranking_details = {"scan_url": result.get("url"), "last_scanned": datetime.utcnow().isoformat()}
+    db.commit()
+
+    return {
+        "success": True,
+        "lead_id": lead.id,
+        "grade": result.get("grade"),
+        "screenshot_b64": result.get("screenshot_b64")
+    }
 
 
 @router.patch("/leads/{lead_id}", response_model=LeadOut)

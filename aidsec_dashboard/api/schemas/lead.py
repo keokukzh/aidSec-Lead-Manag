@@ -77,3 +77,9 @@ class PaginatedLeads(BaseModel):
 class BulkStatusUpdate(BaseModel):
     lead_ids: list[int]
     new_status: str
+
+
+class BulkSecurityScanRequest(BaseModel):
+    lead_ids: list[int]
+    grade_filter: Optional[str] = None
+

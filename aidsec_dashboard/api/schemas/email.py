@@ -20,6 +20,15 @@ class BulkSendRequest(BaseModel):
     email_type: str = "erstkontakt"
     delay_seconds: int = 10
     campaign_id: Optional[int] = None
+    template: Optional[str] = None
+    attach_screenshot: Optional[bool] = False
+    schedule: Optional[str] = "now"
+
+
+class BulkPreviewRequest(BaseModel):
+    lead_ids: list[int]
+    template: str
+    attach_screenshot: Optional[bool] = False
 
 
 class EmailHistoryOut(BaseModel):
