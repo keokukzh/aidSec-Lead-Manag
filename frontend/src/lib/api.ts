@@ -635,12 +635,12 @@ export const emailsApi = {
       message: string;
     }>("/emails/outlook/status"),
 
-  connectOutlook: () =>
+  connectOutlook: (redirectUri?: string) =>
     request<{
       authorization_url: string;
       state: string;
       message: string;
-    }>("/emails/outlook/connect"),
+    }>(`/emails/outlook/connect${redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : ""}`),
 
   disconnectOutlook: () =>
     request<{ success: boolean; message: string }>(

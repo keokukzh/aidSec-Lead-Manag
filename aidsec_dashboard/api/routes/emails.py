@@ -767,7 +767,7 @@ import secrets
 
 
 @router.get("/emails/outlook/connect")
-def outlook_connect():
+def outlook_connect(redirect_uri: str | None = Query(None)):
     """
     Get OAuth authorization URL for connecting Outlook account.
     User should be redirected to this URL to authorize access.
@@ -780,7 +780,7 @@ def outlook_connect():
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
 
-    auth_url = outlook.get_authorization_url(state)
+    auth_url = outlook.get_authorization_url(state, redirect_uri=redirect_uri)
 
     return {
         "authorization_url": auth_url,
@@ -831,7 +831,7 @@ def outlook_status():
 
 
 @router.post("/emails/outlook/callback")
-def outlook_callback(code: str, state: str = ""):
+def outlook_callback(code: str, state: str = "", redirect_uri: str | None = Query(None)):
     """
     OAuth callback - exchange authorization code for tokens.
     This should be called after user authorizes the app.
@@ -844,7 +844,7 @@ def outlook_callback(code: str, state: str = ""):
         raise HTTPException(503, "Outlook nicht konfiguriert (Client ID/Secret fehlen)")
 
     try:
-        token_data = outlook.exchange_code_for_token(code)
+        token_data = outlook.exchange_code_for_token(code, redirect_uri=redirect_uri)
 
         if not token_data:
             print("DEBUG: Token exchange failed - no data returned")

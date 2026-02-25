@@ -7,7 +7,6 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get("error");
   const errorDescription = searchParams.get("error_description");
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
   const redirectUrl = new URL("/settings", request.url);
 
   if (error) {
@@ -23,27 +22,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  try {
-    // Call backend to exchange code for token
-    const response = await fetch(`${baseUrl}/emails/outlook/callback?code=${code}&state=${state || ""}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer backend-sync",
-      },
-    });
-
-    if (response.ok) {
-      redirectUrl.searchParams.set("outlook", "connected");
-    } else {
-      const errorData = await response.json().catch(() => ({ detail: "Token exchange failed" }));
-      redirectUrl.searchParams.set("outlook", "error");
-      redirectUrl.searchParams.set("message", errorData.detail || "Failed to connect Outlook");
-    }
-  } catch (err) {
-    console.error("Callback processing error:", err);
-    redirectUrl.searchParams.set("outlook", "error");
-    redirectUrl.searchParams.set("message", "Internal server error during connection");
+  redirectUrl.searchParams.set("code", code);
+  if (state) {
+    redirectUrl.searchParams.set("state", state);
   }
 
   return NextResponse.redirect(redirectUrl);

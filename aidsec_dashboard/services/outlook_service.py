@@ -18,12 +18,18 @@ class OutlookService:
     """Service for Microsoft Graph API integration to create email drafts in Outlook."""
 
     def __init__(self):
-        self.tenant_id = os.getenv("OUTLOOK_TENANT_ID", "common")
-        self.client_id = os.getenv("OUTLOOK_CLIENT_ID", "")
-        self.client_secret = os.getenv("OUTLOOK_CLIENT_SECRET", "")
-        self.user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
-        self.redirect_uri = os.getenv("OUTLOOK_REDIRECT_URI", "http://localhost:3000/api/auth/outlook/callback")
-        self.scopes = os.getenv("OUTLOOK_SCOPES", "openid profile email Mail.Read Mail.Send User.Read offline_access").split()
+        self.tenant_id = self._get_config_value("OUTLOOK_TENANT_ID", "common")
+        self.client_id = self._get_config_value("OUTLOOK_CLIENT_ID", "")
+        self.client_secret = self._get_config_value("OUTLOOK_CLIENT_SECRET", "")
+        self.user_email = self._get_config_value("OUTLOOK_USER_EMAIL", "")
+        self.redirect_uri = self._get_config_value(
+            "OUTLOOK_REDIRECT_URI",
+            "http://localhost:3000/api/auth/outlook/callback",
+        )
+        self.scopes = self._get_config_value(
+            "OUTLOOK_SCOPES",
+            "openid profile email Mail.Read Mail.Send User.Read offline_access",
+        ).split()
         self.graph_url = "https://graph.microsoft.com/v1.0"
         
         # Validation
@@ -33,6 +39,24 @@ class OutlookService:
             print("WARNING: OUTLOOK_CLIENT_SECRET is missing in .env")
             
         self._load_tokens_from_db()
+
+    def _get_config_value(self, key: str, default: str = "") -> str:
+        """Resolve config value with DB settings overriding environment variables."""
+        try:
+            from database.database import get_session
+            from database.models import Settings
+
+            session = get_session()
+            try:
+                setting = session.query(Settings).filter(Settings.key == key).first()
+                if setting and setting.value is not None and str(setting.value).strip() != "":
+                    return str(setting.value).strip()
+            finally:
+                session.close()
+        except Exception:
+            pass
+
+        return os.getenv(key, default)
 
     def _load_tokens_from_db(self):
         """Load tokens from the database into the cache."""
@@ -77,12 +101,13 @@ class OutlookService:
         """Check if Outlook is configured"""
         return bool(self.client_id and self.client_secret)
 
-    def get_authorization_url(self, state: str) -> str:
+    def get_authorization_url(self, state: str, redirect_uri: Optional[str] = None) -> str:
         """Generate OAuth authorization URL"""
         import urllib.parse
         scope_str = " ".join(self.scopes)
         scope_quoted = urllib.parse.quote(scope_str)
-        redirect_quoted = urllib.parse.quote(self.redirect_uri)
+        effective_redirect = (redirect_uri or self.redirect_uri).strip()
+        redirect_quoted = urllib.parse.quote(effective_redirect)
         auth_url = (
             f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/authorize"
             f"?client_id={self.client_id}"
@@ -94,20 +119,21 @@ class OutlookService:
         )
         return auth_url
 
-    def exchange_code_for_token(self, code: str) -> Optional[Dict]:
+    def exchange_code_for_token(self, code: str, redirect_uri: Optional[str] = None) -> Optional[Dict]:
         """Exchange authorization code for access token"""
         token_url = f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/token"
+        effective_redirect = (redirect_uri or self.redirect_uri).strip()
 
         data = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "code": code,
-            "redirect_uri": self.redirect_uri,
+            "redirect_uri": effective_redirect,
             "grant_type": "authorization_code",
             "scope": " ".join(self.scopes),
         }
 
-        print(f"DEBUG: Exchanging code for token with redirect_uri: {self.redirect_uri}")
+        print(f"DEBUG: Exchanging code for token with redirect_uri: {effective_redirect}")
 
         try:
             response = requests.post(token_url, data=data, timeout=30)
@@ -446,11 +472,8 @@ _outlook_service = None
 
 
 def get_outlook_service() -> OutlookService:
-    """Get singleton instance of OutlookService"""
-    global _outlook_service
-    if _outlook_service is None:
-        _outlook_service = OutlookService()
-    return _outlook_service
+    """Get a fresh OutlookService instance (ensures latest saved settings are used)."""
+    return OutlookService()
 
 
 def reset_outlook_service():
