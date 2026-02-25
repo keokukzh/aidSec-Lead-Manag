@@ -37,3 +37,5 @@ Thumbs.db
 .claude/
 .gemini/
 .antigravity/
+.vercel
+.env*.local
