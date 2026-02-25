@@ -88,6 +88,7 @@ export default function EmailPage() {
   const [scheduleMode, setScheduleMode] = useState<"from-start" | "cumulative">("from-start");
   const sequenceImportInputRef = useRef<HTMLInputElement | null>(null);
   const [hasImportedSequenceConfig, setHasImportedSequenceConfig] = useState(false);
+  const [workerUiNow, setWorkerUiNow] = useState<number>(Date.now());
 
   const { data: leadsData } = useQuery({
     queryKey: ["leads-all"],
@@ -135,6 +136,26 @@ export default function EmailPage() {
     queryKey: ["email-sequence-leads", selectedSequenceId],
     queryFn: () => emailsApi.getSequenceLeads(Number(selectedSequenceId)),
     enabled: Boolean(selectedSequenceId),
+  });
+
+  const {
+    data: sequenceWorkerHealth,
+    refetch: refetchSequenceWorkerHealth,
+    isFetching: isFetchingSequenceWorkerHealth,
+  } = useQuery({
+    queryKey: ["sequence-worker-health"],
+    queryFn: () => emailsApi.getSequenceWorkerHealth(),
+    refetchInterval: 15000,
+  });
+
+  const {
+    data: sequenceExecutionDue,
+    refetch: refetchSequenceExecutionDue,
+    isFetching: isFetchingSequenceExecutionDue,
+  } = useQuery({
+    queryKey: ["sequence-execution-due-count"],
+    queryFn: () => emailsApi.getSequenceExecutionDueCount(),
+    refetchInterval: 15000,
   });
 
   const { data: composerPreview, isFetching: isPreviewLoading, refetch: refetchPreview } = useQuery({
@@ -300,6 +321,27 @@ export default function EmailPage() {
     },
   });
 
+  const runSequenceExecutionMutation = useMutation({
+    mutationFn: (dryRun: boolean) => emailsApi.runSequenceExecution(100, dryRun),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["sequence-worker-health"] });
+      queryClient.invalidateQueries({ queryKey: ["sequence-execution-due-count"] });
+      if (selectedSequenceId) {
+        queryClient.invalidateQueries({ queryKey: ["email-sequence-stats", selectedSequenceId] });
+        queryClient.invalidateQueries({ queryKey: ["email-sequence-leads", selectedSequenceId] });
+      }
+      setToast({
+        message: data.dry_run
+          ? `Dry-Run: ${data.processed} fällig, ${data.completed} abgeschlossen simuliert`
+          : `Worker-Run: ${data.sent} gesendet, ${data.failed} fehlgeschlagen, ${data.completed} abgeschlossen`,
+        type: "success",
+      });
+    },
+    onError: (error: Error) => {
+      setToast({ message: `Worker-Ausführung fehlgeschlagen: ${error.message}`, type: "error" });
+    },
+  });
+
   const saveImportedSequenceMutation = useMutation({
     mutationFn: () =>
       emailsApi.createSequence({
@@ -368,6 +410,64 @@ export default function EmailPage() {
       };
     });
   }, [scheduleReferenceDate, scheduleMode, sequenceSteps, templates]);
+
+  const sequenceWorkerStatusUi = useMemo(() => {
+    if (!sequenceWorkerHealth?.enabled) {
+      return {
+        label: "deaktiviert",
+        ringClass: "border-[#6b7280]",
+        textClass: "text-[#6b7280]",
+      };
+    }
+    if (sequenceWorkerHealth.last_error) {
+      return {
+        label: "fehler",
+        ringClass: "border-[#e74c3c]",
+        textClass: "text-[#e74c3c]",
+      };
+    }
+    if (sequenceWorkerHealth.running) {
+      return {
+        label: "läuft",
+        ringClass: "border-[#00d4aa]",
+        textClass: "text-[#00d4aa]",
+      };
+    }
+    return {
+      label: "wartend",
+      ringClass: "border-[#f39c12]",
+      textClass: "text-[#f39c12]",
+    };
+  }, [sequenceWorkerHealth]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setWorkerUiNow(Date.now()), 10000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const formatRelativeTime = (isoDate?: string | null): string => {
+    if (!isoDate) {
+      return "unbekannt";
+    }
+    const ts = new Date(isoDate).getTime();
+    if (Number.isNaN(ts)) {
+      return "unbekannt";
+    }
+    const diffSec = Math.max(0, Math.floor((workerUiNow - ts) / 1000));
+    if (diffSec < 60) {
+      return `vor ${diffSec}s`;
+    }
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) {
+      return `vor ${diffMin}m`;
+    }
+    const diffHours = Math.floor(diffMin / 60);
+    return `vor ${diffHours}h`;
+  };
+
+  const refreshSequenceWorkerPanel = async () => {
+    await Promise.all([refetchSequenceWorkerHealth(), refetchSequenceExecutionDue()]);
+  };
 
   const toggleSequenceLead = (leadId: number) => {
     setSequenceLeadIds((prev) =>
@@ -945,6 +1045,67 @@ export default function EmailPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-[#e8eaed]">Sequence & Scheduling</h2>
           <span className="text-xs text-[#6b7280]">Multi-Step Builder</span>
+        </div>
+
+        <div className="rounded-md border border-[#2a3040] bg-[#0e1117] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-[#e8eaed]">Sequence Worker Status</p>
+                <span className={cn("rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide", sequenceWorkerStatusUi.ringClass, sequenceWorkerStatusUi.textClass)}>
+                  {sequenceWorkerStatusUi.label}
+                </span>
+              </div>
+              <p className="text-xs text-[#b8bec6]">
+                {sequenceWorkerHealth?.enabled ? "Aktiviert" : "Deaktiviert"} · {sequenceWorkerHealth?.running ? "läuft" : "gestoppt"}
+                {sequenceWorkerHealth?.last_cycle_at ? ` · letzter Lauf: ${new Date(sequenceWorkerHealth.last_cycle_at).toLocaleString("de-CH")}` : ""}
+              </p>
+              <p className="text-xs text-[#6b7280]">
+                Fällig: {sequenceExecutionDue?.due_count ?? 0} · Aktive Assignments: {sequenceExecutionDue?.active_assignments ?? 0}
+              </p>
+              <p className="text-xs text-[#6b7280]">
+                Zuletzt aktualisiert: {formatRelativeTime(sequenceExecutionDue?.timestamp)}
+                {sequenceWorkerHealth?.last_cycle_at
+                  ? ` · letzter Worker-Lauf: ${formatRelativeTime(sequenceWorkerHealth.last_cycle_at)}`
+                  : ""}
+              </p>
+              <p className="text-xs text-[#6b7280]">
+                {sequenceWorkerStatusUi.label === "wartend"
+                  ? "Hinweis: \"wartend\" ist normal zwischen zwei Intervallen oder wenn aktuell keine fälligen Assignments vorhanden sind."
+                  : sequenceWorkerStatusUi.label === "läuft"
+                    ? "Der Worker verarbeitet fällige Sequence-Schritte automatisch im konfigurierten Intervall."
+                    : sequenceWorkerStatusUi.label === "fehler"
+                      ? "Der letzte Lauf ist fehlgeschlagen. Bitte Fehlermeldung prüfen und danach erneut ausführen."
+                      : "Der Worker ist deaktiviert. Aktivierung über SEQUENCE_WORKER_ENABLED=true."}
+              </p>
+              {sequenceWorkerHealth?.last_error ? (
+                <p className="text-xs text-[#e74c3c]">Letzter Fehler: {sequenceWorkerHealth.last_error}</p>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={refreshSequenceWorkerPanel}
+                disabled={isFetchingSequenceWorkerHealth || isFetchingSequenceExecutionDue}
+                className="rounded border border-[#2a3040] px-3 py-1 text-xs text-[#e8eaed] disabled:opacity-50"
+              >
+                {isFetchingSequenceWorkerHealth || isFetchingSequenceExecutionDue ? "Aktualisiert..." : "Aktualisieren"}
+              </button>
+              <button
+                onClick={() => runSequenceExecutionMutation.mutate(true)}
+                disabled={runSequenceExecutionMutation.isPending}
+                className="rounded border border-[#2a3040] px-3 py-1 text-xs text-[#e8eaed] disabled:opacity-50"
+              >
+                {runSequenceExecutionMutation.isPending ? "Läuft..." : "Dry Run"}
+              </button>
+              <button
+                onClick={() => runSequenceExecutionMutation.mutate(false)}
+                disabled={runSequenceExecutionMutation.isPending}
+                className="rounded-md bg-[#00d4aa] px-3 py-1 text-xs font-semibold text-[#0e1117] disabled:opacity-50"
+              >
+                {runSequenceExecutionMutation.isPending ? "Läuft..." : "Jetzt ausführen"}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

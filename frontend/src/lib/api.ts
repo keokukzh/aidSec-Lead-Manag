@@ -525,6 +525,42 @@ export const emailsApi = {
       status: string;
     }>>(`/emails/sequences/${id}/leads`),
 
+  getSequenceExecutionDueCount: () =>
+    request<{
+      due_count: number;
+      active_assignments: number;
+      timestamp: string;
+    }>("/emails/sequences/execution/due-count"),
+
+  runSequenceExecution: (limit: number = 50, dryRun: boolean = false) =>
+    request<{
+      processed: number;
+      sent: number;
+      failed: number;
+      completed: number;
+      rescheduled: number;
+      paused: number;
+      skipped: number;
+      dry_run: boolean;
+      details: Array<Record<string, unknown>>;
+    }>(`/emails/sequences/execution/run?limit=${limit}&dry_run=${dryRun}`, {
+      method: "POST",
+    }),
+
+  getSequenceWorkerHealth: () =>
+    request<{
+      enabled: boolean;
+      running: boolean;
+      last_cycle_at?: string | null;
+      last_result?: {
+        processed?: number;
+        sent?: number;
+        failed?: number;
+        completed?: number;
+      } | null;
+      last_error?: string | null;
+    }>("/health/sequence-worker"),
+
   // Bulk Send
   startBulkSend: (data: {
     lead_ids: number[];

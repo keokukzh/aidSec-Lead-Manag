@@ -50,6 +50,13 @@ def _ensure_legacy_columns():
         ("email_templates", "parent_template_id", "ALTER TABLE email_templates ADD COLUMN parent_template_id INTEGER"),
         ("email_templates", "variables", "ALTER TABLE email_templates ADD COLUMN variables JSON"),
         ("email_templates", "updated_at", "ALTER TABLE email_templates ADD COLUMN updated_at DATETIME"),
+        ("agent_tasks", "lease_token", "ALTER TABLE agent_tasks ADD COLUMN lease_token VARCHAR(64)"),
+        ("agent_tasks", "lease_until", "ALTER TABLE agent_tasks ADD COLUMN lease_until DATETIME"),
+        ("agent_tasks", "last_heartbeat_at", "ALTER TABLE agent_tasks ADD COLUMN last_heartbeat_at DATETIME"),
+        ("agent_tasks", "attempts", "ALTER TABLE agent_tasks ADD COLUMN attempts INTEGER DEFAULT 0"),
+        ("agent_tasks", "max_attempts", "ALTER TABLE agent_tasks ADD COLUMN max_attempts INTEGER DEFAULT 5"),
+        ("agent_tasks", "next_retry_at", "ALTER TABLE agent_tasks ADD COLUMN next_retry_at DATETIME"),
+        ("agent_tasks", "result_payload", "ALTER TABLE agent_tasks ADD COLUMN result_payload JSON"),
     ]
 
     with engine.begin() as conn:

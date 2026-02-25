@@ -28,6 +28,11 @@ def list_tasks(limit: int = 50, db: Session = Depends(get_db)):
             "lead_firma": firma,
             "status": task_obj.status,
             "assigned_to": task_obj.assigned_to,
+            "attempts": task_obj.attempts,
+            "max_attempts": task_obj.max_attempts,
+            "lease_until": task_obj.lease_until.isoformat() if task_obj.lease_until else None,
+            "last_heartbeat_at": task_obj.last_heartbeat_at.isoformat() if task_obj.last_heartbeat_at else None,
+            "next_retry_at": task_obj.next_retry_at.isoformat() if task_obj.next_retry_at else None,
             "created_at": task_obj.created_at.isoformat() if task_obj.created_at else None,
             "completed_at": task_obj.completed_at.isoformat() if task_obj.completed_at else None,
             "error_message": task_obj.error_message

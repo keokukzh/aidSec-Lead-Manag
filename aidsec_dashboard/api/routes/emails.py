@@ -60,6 +60,10 @@ from services.email_service import get_email_service, DEFAULT_TEMPLATES
 from services.llm_service import get_llm_service
 from services.outlook_service import get_outlook_service
 from services.outreach import detect_email_type, get_recommended_product, parse_llm_json
+from services.sequence_execution_service import (
+    count_due_sequence_assignments,
+    execute_due_sequence_assignments,
+)
 
 router = APIRouter(tags=["emails"], dependencies=[Depends(verify_api_key)])
 
@@ -1451,6 +1455,31 @@ def get_sequence_leads(seq_id: int, db: Session = Depends(get_db)):
         })
 
     return result
+
+
+@router.get("/emails/sequences/execution/due-count")
+def get_due_sequence_count(db: Session = Depends(get_db)):
+    """Get how many sequence assignments are due for execution right now."""
+    due_count = count_due_sequence_assignments(db)
+    active_assignments = db.query(LeadSequenceAssignment).filter(
+        LeadSequenceAssignment.status == "aktiv"
+    ).count()
+    return {
+        "due_count": due_count,
+        "active_assignments": active_assignments,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@router.post("/emails/sequences/execution/run")
+def run_due_sequences(
+    limit: int = Query(50, ge=1, le=500),
+    dry_run: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    """Execute due sequence assignments (manual worker trigger)."""
+    summary = execute_due_sequence_assignments(db=db, limit=limit, dry_run=dry_run)
+    return summary
 
 
 # ============ Analytics Endpoints ============

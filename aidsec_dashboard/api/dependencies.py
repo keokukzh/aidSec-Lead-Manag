@@ -40,10 +40,14 @@ def verify_api_key(
     if api_key and api_key == expected:
         return api_key
 
-    # Check Bearer token (simple auth token)
-    if bearer:
-        # Accept any bearer token for now (simple auth)
-        return bearer.credentials
+    # Check Bearer token
+    if bearer and bearer.credentials:
+        allowed_bearers = {
+            "authenticated-token",  # issued by /auth/login in current simple auth flow
+            expected,
+        }
+        if bearer.credentials in allowed_bearers:
+            return bearer.credentials
 
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 

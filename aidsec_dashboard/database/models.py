@@ -383,6 +383,8 @@ class AgentTask(Base):
         Index("ix_agent_tasks_status", "status"),
         Index("ix_agent_tasks_lead_id", "lead_id"),
         Index("ix_agent_tasks_agent", "assigned_to"),
+        Index("ix_agent_tasks_lease_until", "lease_until"),
+        Index("ix_agent_tasks_next_retry_at", "next_retry_at"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -391,6 +393,13 @@ class AgentTask(Base):
     payload = Column(JSON, nullable=True)
     status = Column(String(20), default="pending")
     assigned_to = Column(String(100), nullable=True)
+    lease_token = Column(String(64), nullable=True)
+    lease_until = Column(DateTime, nullable=True)
+    last_heartbeat_at = Column(DateTime, nullable=True)
+    attempts = Column(Integer, default=0)
+    max_attempts = Column(Integer, default=5)
+    next_retry_at = Column(DateTime, nullable=True)
+    result_payload = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)

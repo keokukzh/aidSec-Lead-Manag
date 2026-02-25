@@ -202,18 +202,17 @@ def trigger_auto_followup(db: Session = Depends(get_db)):
     queued = 0
     for lead in leads:
         existing = db.query(AgentTask).filter(
-            AgentTask.target_id == lead.id, 
-            AgentTask.task_type == "draft_followup", 
-            AgentTask.status == "pending"
+            AgentTask.lead_id == lead.id,
+            AgentTask.task_type == "GENERATE_DRAFT",
+            AgentTask.status.in_(["pending", "processing"]),
         ).first()
         
         if not existing:
             task = AgentTask(
-                agent_type="outreach",
-                task_type="draft_followup",
-                target_id=lead.id,
+                task_type="GENERATE_DRAFT",
+                lead_id=lead.id,
                 status="pending",
-                context={"reason": "Auto-Follow-up 7 Days", "auto": True}
+                payload={"reason": "Auto-Follow-up 7 Days", "auto": True, "email_type": "followup"},
             )
             db.add(task)
             queued += 1
@@ -252,7 +251,13 @@ def process_due_campaigns(db: Session = Depends(get_db)):
         
         # Check if lead exists and is not won/lost or already replied
         lead = db.query(Lead).filter(Lead.id == cl.lead_id).first()
-        if not lead or lead.status in [LeadStatus.GEWONNEN, LeadStatus.VERLOREN, LeadStatus.PENDING]:
+        if not lead or lead.status in [
+            LeadStatus.GEWONNEN,
+            LeadStatus.VERLOREN,
+            LeadStatus.RESPONSE_RECEIVED,
+            LeadStatus.OFFER_SENT,
+            LeadStatus.NEGOTIATION,
+        ]:
             cl.cl_status = "pausiert"
             continue
             
