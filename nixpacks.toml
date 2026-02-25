@@ -1,16 +1,17 @@
 [variables]
 PYTHONUNBUFFERED = "1"
 PIP_DISABLE_PIP_VERSION_CHECK = "1"
+VENV_PATH = "/opt/venv"
 
 [phases.setup]
 nixPkgs = ["python312", "gcc"]
 
 [phases.install]
 cmds = [
-  "cd aidsec_dashboard && (python3 -m ensurepip --upgrade || python -m ensurepip --upgrade)",
-  "cd aidsec_dashboard && (python3 -m pip install --upgrade pip || python -m pip install --upgrade pip)",
-  "cd aidsec_dashboard && (python3 -m pip install -r requirements.txt || python -m pip install -r requirements.txt)"
+  "python3 -m venv $VENV_PATH",
+  "$VENV_PATH/bin/pip install --upgrade pip",
+  "cd aidsec_dashboard && $VENV_PATH/bin/pip install -r requirements.txt"
 ]
 
 [start]
-cmd = "cd aidsec_dashboard && (python3 -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000} || python -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000})"
+cmd = "cd aidsec_dashboard && $VENV_PATH/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"
