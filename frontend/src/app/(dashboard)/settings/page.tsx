@@ -149,7 +149,7 @@ export default function SettingsPage() {
   // Mutation to connect Outlook
   const connectMutation = useMutation({
     mutationFn: async () => {
-      const redirectUri = `${window.location.origin}/settings`;
+      const redirectUri = `${window.location.origin}/api/auth/outlook/callback`;
       return emailsApi.connectOutlook(redirectUri);
     },
     onSuccess: (data) => {
@@ -202,7 +202,7 @@ export default function SettingsPage() {
             }
           }
 
-          const redirectUri = `${window.location.origin}/settings`;
+          const redirectUri = `${window.location.origin}/api/auth/outlook/callback`;
           const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/emails/outlook/callback?code=${codeParam}&state=${stateParam || ""}&redirect_uri=${encodeURIComponent(redirectUri)}`, {
             method: "POST",
             headers: {
