@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time as _time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -20,9 +20,22 @@ from api.schemas.email import (
     TemplateOut,
     CustomTemplateOut,
     CustomTemplateCreate,
+    CustomTemplateUpdate,
+    CustomTemplateDuplicate,
+    TemplateWithVariablesOut,
     GlobalEmailHistoryOut,
     DraftUpdateRequest,
     BulkDraftApproveRequest,
+    ABTestCreate,
+    ABTestOut,
+    ABTestStats,
+    SequenceCreate,
+    SequenceUpdate,
+    SequenceOut,
+    SequenceAssignLeads,
+    SequenceStats,
+    EmailAnalyticsOverview,
+    TemplateAnalytics,
 )
 
 from api.schemas.common import GenericResponse
@@ -34,6 +47,9 @@ from database.models import (
     EmailTemplate,
     StatusHistory,
     Settings,
+    EmailSequence,
+    LeadSequenceAssignment,
+    ABTest,
 )
 from services.email_service import get_email_service, DEFAULT_TEMPLATES
 from services.llm_service import get_llm_service
@@ -104,8 +120,8 @@ def send_email(payload: SendEmailRequest, db: Session = Depends(get_db)):
     return {"success": True, "email_id": eh.id}
 
 
-def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl: str, delay_seconds: int):
-    """Background task: send emails to multiple leads with delay."""
+def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl: str, delay_seconds: int, subject_variants: list[str] | None = None):
+    """Background task: send emails to multiple leads with delay, supporting A/B subjects."""
     from database.database import get_session
     session = get_session()
     job = _bulk_email_jobs[job_id]
@@ -135,7 +151,11 @@ def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl
                 continue
 
             body = body_tpl
-            subject = subject_tpl
+            if subject_variants and len(subject_variants) > 0:
+                base_subject = subject_variants[i % len(subject_variants)]
+            else:
+                base_subject = subject_tpl
+            subject = base_subject
             variables = {
                 "firma": lead.firma or "",
                 "stadt": lead.stadt or "Schweiz",
@@ -264,15 +284,17 @@ def start_bulk_send(
     }
     
     subject = payload.subject
+    subject_variants = payload.subject_variants
     body = payload.body
     
     if payload.template and payload.template in BULK_TEMPLATES:
-        subject = BULK_TEMPLATES[payload.template]["subject"]
+        if not subject_variants and not subject:
+            subject = BULK_TEMPLATES[payload.template]["subject"]
         body = BULK_TEMPLATES[payload.template]["body"]
         
     background_tasks.add_task(
         _run_bulk_email, job_id, payload.lead_ids,
-        subject, body, payload.delay_seconds
+        subject, body, payload.delay_seconds, subject_variants
     )
     return {"job_id": job_id, "status": "started"}
 
@@ -298,21 +320,47 @@ def email_history(lead_id: int, db: Session = Depends(get_db)):
     rows = (
         db.query(EmailHistory)
         .filter(EmailHistory.lead_id == lead_id)
-        .order_by(EmailHistory.id.desc())
+        .order_by(EmailHistory.gesendet_at.desc(), EmailHistory.created_at.desc())
         .all()
     )
-    return [
-        EmailHistoryOut(
-            id=r.id,
-            lead_id=r.lead_id,
-            betreff=r.betreff,
-            inhalt=r.inhalt,
-            status=r.status.value if hasattr(r.status, "value") else str(r.status),
-            gesendet_at=r.gesendet_at,
-            campaign_id=r.campaign_id,
-        )
-        for r in rows
-    ]
+    return rows
+
+@router.get("/emails/ab-testing")
+def ab_testing_stats(db: Session = Depends(get_db)):
+    """Return metrics for each subject line used (A/B testing)."""
+    from sqlalchemy import func, case
+    from database.models import EmailHistory, Lead, LeadStatus, EmailStatus
+    
+    # Simple analytics: group by subject, count total sent, count leads who responded
+    results = db.query(
+        EmailHistory.betreff,
+        func.count(EmailHistory.id).label("sent"),
+        func.count(
+            case((Lead.status.in_([
+                LeadStatus.RESPONSE_RECEIVED, 
+                LeadStatus.OFFER_SENT, 
+                LeadStatus.NEGOTIATION, 
+                LeadStatus.GEWONNEN
+            ]), 1), else_=None)
+        ).label("responded")
+    ).join(Lead, Lead.id == EmailHistory.lead_id)\
+     .filter(EmailHistory.status == EmailStatus.SENT)\
+     .group_by(EmailHistory.betreff)\
+     .order_by(func.count(EmailHistory.id).desc())\
+     .all()
+    
+    out = []
+    for row in results:
+        subject = row[0]
+        sent = row[1]
+        responded = row[2]
+        out.append({
+            "subject": subject,
+            "sent": sent,
+            "responded": responded,
+            "response_rate": round(responded / max(1, sent) * 100, 1)
+        })
+    return out
 
 
 @router.post("/emails/generate")
@@ -955,3 +1003,503 @@ def get_synced_emails(
         "emails": result,
         "total": len(result)
     }
+
+
+# ============ Extended Template Endpoints ============
+
+@router.get("/emails/custom-templates/with-variables", response_model=list[TemplateWithVariablesOut])
+def list_templates_with_variables(db: Session = Depends(get_db)):
+    """List all custom templates with their variable definitions."""
+    rows = db.query(EmailTemplate).order_by(EmailTemplate.name, EmailTemplate.version.desc()).all()
+    return [TemplateWithVariablesOut.model_validate(r) for r in rows]
+
+
+@router.patch("/emails/custom-templates/{tpl_id}/extend", response_model=CustomTemplateOut)
+def update_custom_template_extended(tpl_id: int, payload: CustomTemplateUpdate, db: Session = Depends(get_db)):
+    """Update template with extended fields (category, version, variables)."""
+    tpl = db.query(EmailTemplate).filter(EmailTemplate.id == tpl_id).first()
+    if not tpl:
+        raise HTTPException(404, "Template not found")
+
+    if payload.name is not None:
+        tpl.name = payload.name
+    if payload.betreff is not None:
+        tpl.betreff = payload.betreff
+    if payload.inhalt is not None:
+        tpl.inhalt = payload.inhalt
+    if payload.kategorie is not None:
+        from database.models import LeadKategorie
+        try:
+            tpl.kategorie = LeadKategorie(payload.kategorie)
+        except ValueError:
+            pass
+    if payload.is_ab_test is not None:
+        tpl.is_ab_test = payload.is_ab_test
+    if payload.variables is not None:
+        tpl.variables = payload.variables
+
+    db.commit()
+    db.refresh(tpl)
+    return CustomTemplateOut.model_validate(tpl)
+
+
+@router.post("/emails/custom-templates/{tpl_id}/duplicate", response_model=CustomTemplateOut)
+def duplicate_template(tpl_id: int, payload: CustomTemplateDuplicate, db: Session = Depends(get_db)):
+    """Duplicate a template, optionally as new version."""
+    original = db.query(EmailTemplate).filter(EmailTemplate.id == tpl_id).first()
+    if not original:
+        raise HTTPException(404, "Template not found")
+
+    new_version = 1
+    if payload.new_version:
+        # Find highest version number
+        siblings = db.query(EmailTemplate).filter(
+            EmailTemplate.parent_template_id == tpl_id
+        ).all()
+        if siblings:
+            new_version = max(s.version for s in siblings) + 1
+        else:
+            new_version = original.version + 1
+
+    new_tpl = EmailTemplate(
+        name=payload.new_name,
+        betreff=original.betreff,
+        inhalt=original.inhalt,
+        kategorie=original.kategorie,
+        is_ab_test=original.is_ab_test,
+        version=new_version,
+        parent_template_id=tpl_id,
+        variables=original.variables,
+    )
+    db.add(new_tpl)
+    db.commit()
+    db.refresh(new_tpl)
+    return CustomTemplateOut.model_validate(new_tpl)
+
+
+@router.get("/emails/templates/versions/{tpl_id}")
+def get_template_versions(tpl_id: int, db: Session = Depends(get_db)):
+    """Get all versions of a template."""
+    # Get the root template
+    root = db.query(EmailTemplate).filter(EmailTemplate.id == tpl_id).first()
+    if not root:
+        raise HTTPException(404, "Template not found")
+
+    # Find all related versions
+    versions = [root]
+    # Check if it has children (newer versions)
+    versions.extend(root.children)
+
+    # If this is a child, find siblings and parent
+    if root.parent_template_id:
+        parent = db.query(EmailTemplate).filter(EmailTemplate.id == root.parent_template_id).first()
+        if parent:
+            versions.append(parent)
+            versions.extend(parent.children)
+
+    # Remove duplicates and sort by version
+    seen = set()
+    unique_versions = []
+    for v in versions:
+        if v.id not in seen:
+            seen.add(v.id)
+            unique_versions.append({
+                "id": v.id,
+                "version": v.version,
+                "name": v.name,
+                "betreff": v.betreff,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            })
+
+    return sorted(unique_versions, key=lambda x: x["version"], reverse=True)
+
+
+# ============ A/B Testing Endpoints ============
+
+@router.post("/emails/ab-tests", response_model=ABTestOut, status_code=201)
+def create_ab_test(payload: ABTestCreate, db: Session = Depends(get_db)):
+    """Create a new A/B test for subject lines."""
+    test = ABTest(
+        name=payload.name,
+        template_id=payload.template_id,
+        subject_a=payload.subject_a,
+        subject_b=payload.subject_b,
+        distribution_a=payload.distribution_a,
+        distribution_b=payload.distribution_b,
+        auto_winner_after=payload.auto_winner_after,
+    )
+    db.add(test)
+    db.commit()
+    db.refresh(test)
+    return ABTestOut.model_validate(test)
+
+
+@router.get("/emails/ab-tests", response_model=list[ABTestOut])
+def list_ab_tests(db: Session = Depends(get_db)):
+    """List all A/B tests."""
+    tests = db.query(ABTest).order_by(ABTest.created_at.desc()).all()
+    return [ABTestOut.model_validate(t) for t in tests]
+
+
+@router.get("/emails/ab-tests/{test_id}", response_model=ABTestOut)
+def get_ab_test(test_id: int, db: Session = Depends(get_db)):
+    """Get a specific A/B test."""
+    test = db.query(ABTest).filter(ABTest.id == test_id).first()
+    if not test:
+        raise HTTPException(404, "A/B Test not found")
+    return ABTestOut.model_validate(test)
+
+
+@router.get("/emails/ab-tests/{test_id}/stats", response_model=ABTestStats)
+def get_ab_test_stats(test_id: int, db: Session = Depends(get_db)):
+    """Get statistics for an A/B test."""
+    test = db.query(ABTest).filter(ABTest.id == test_id).first()
+    if not test:
+        raise HTTPException(404, "A/B Test not found")
+
+    # Calculate rates
+    open_rate_a = (test.opens_a / max(1, test.sent_a)) * 100 if test.sent_a else 0
+    open_rate_b = (test.opens_b / max(1, test.sent_b)) * 100 if test.sent_b else 0
+    click_rate_a = (test.clicks_a / max(1, test.sent_a)) * 100 if test.sent_a else 0
+    click_rate_b = (test.clicks_b / max(1, test.sent_b)) * 100 if test.sent_b else 0
+
+    # Determine winner if test is complete
+    winner = None
+    if test.status == "completed" and test.winner:
+        winner = test.winner
+
+    return ABTestStats(
+        test_id=test.id,
+        name=test.name,
+        status=test.status,
+        winner=winner,
+        variant_a={
+            "subject": test.subject_a,
+            "sent": test.sent_a,
+            "opens": test.opens_a,
+            "clicks": test.clicks_a,
+            "open_rate": round(open_rate_a, 1),
+            "click_rate": round(click_rate_a, 1),
+        },
+        variant_b={
+            "subject": test.subject_b,
+            "sent": test.sent_b,
+            "opens": test.opens_b,
+            "clicks": test.clicks_b,
+            "open_rate": round(open_rate_b, 1),
+            "click_rate": round(click_rate_b, 1),
+        },
+    )
+
+
+@router.post("/emails/ab-tests/{test_id}/start")
+def start_ab_test(test_id: int, db: Session = Depends(get_db)):
+    """Start an A/B test."""
+    test = db.query(ABTest).filter(ABTest.id == test_id).first()
+    if not test:
+        raise HTTPException(404, "A/B Test not found")
+
+    test.status = "running"
+    db.commit()
+    return {"success": True, "message": f"A/B Test '{test.name}' started"}
+
+
+@router.post("/emails/ab-tests/{test_id}/complete")
+def complete_ab_test(test_id: int, winner: str = "A", db: Session = Depends(get_db)):
+    """Manually complete an A/B test and declare a winner."""
+    test = db.query(ABTest).filter(ABTest.id == test_id).first()
+    if not test:
+        raise HTTPException(404, "A/B Test not found")
+
+    test.status = "completed"
+    test.winner = winner
+    test.completed_at = datetime.utcnow()
+    db.commit()
+    return {"success": True, "message": f"Winner: Variant {winner}", "winner": winner}
+
+
+# ============ Sequence Endpoints ============
+
+@router.post("/emails/sequences", response_model=SequenceOut, status_code=201)
+def create_sequence(payload: SequenceCreate, db: Session = Depends(get_db)):
+    """Create a new email sequence."""
+    sequence = EmailSequence(
+        name=payload.name,
+        beschreibung=payload.beschreibung,
+        steps=[s.model_dump() for s in payload.steps],
+    )
+    db.add(sequence)
+    db.commit()
+    db.refresh(sequence)
+    return SequenceOut.model_validate(sequence)
+
+
+@router.get("/emails/sequences", response_model=list[SequenceOut])
+def list_sequences(db: Session = Depends(get_db)):
+    """List all email sequences."""
+    sequences = db.query(EmailSequence).order_by(EmailSequence.created_at.desc()).all()
+    return [SequenceOut.model_validate(s) for s in sequences]
+
+
+@router.get("/emails/sequences/{seq_id}", response_model=SequenceOut)
+def get_sequence(seq_id: int, db: Session = Depends(get_db)):
+    """Get a specific sequence."""
+    sequence = db.query(EmailSequence).filter(EmailSequence.id == seq_id).first()
+    if not sequence:
+        raise HTTPException(404, "Sequence not found")
+    return SequenceOut.model_validate(sequence)
+
+
+@router.patch("/emails/sequences/{seq_id}", response_model=SequenceOut)
+def update_sequence(seq_id: int, payload: SequenceUpdate, db: Session = Depends(get_db)):
+    """Update a sequence."""
+    sequence = db.query(EmailSequence).filter(EmailSequence.id == seq_id).first()
+    if not sequence:
+        raise HTTPException(404, "Sequence not found")
+
+    if payload.name is not None:
+        sequence.name = payload.name
+    if payload.beschreibung is not None:
+        sequence.beschreibung = payload.beschreibung
+    if payload.steps is not None:
+        sequence.steps = [s.model_dump() for s in payload.steps]
+    if payload.status is not None:
+        sequence.status = payload.status
+
+    db.commit()
+    db.refresh(sequence)
+    return SequenceOut.model_validate(sequence)
+
+
+@router.delete("/emails/sequences/{seq_id}", status_code=204)
+def delete_sequence(seq_id: int, db: Session = Depends(get_db)):
+    """Delete a sequence."""
+    sequence = db.query(EmailSequence).filter(EmailSequence.id == seq_id).first()
+    if not sequence:
+        raise HTTPException(404, "Sequence not found")
+    db.delete(sequence)
+    db.commit()
+
+
+@router.post("/emails/sequences/{seq_id}/assign", response_model=SequenceStats)
+def assign_leads_to_sequence(seq_id: int, payload: SequenceAssignLeads, db: Session = Depends(get_db)):
+    """Assign leads to a sequence."""
+    sequence = db.query(EmailSequence).filter(EmailSequence.id == seq_id).first()
+    if not sequence:
+        raise HTTPException(404, "Sequence not found")
+
+    assigned_count = 0
+    for lead_id in payload.lead_ids:
+        # Check if already assigned
+        existing = db.query(LeadSequenceAssignment).filter(
+            LeadSequenceAssignment.lead_id == lead_id,
+            LeadSequenceAssignment.sequence_id == seq_id,
+            LeadSequenceAssignment.status == "aktiv"
+        ).first()
+
+        if existing:
+            continue
+
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead or not lead.email:
+            continue
+
+        assignment = LeadSequenceAssignment(
+            lead_id=lead_id,
+            sequence_id=seq_id,
+            next_send_at=datetime.utcnow() if payload.start_now else None,
+        )
+        db.add(assignment)
+        assigned_count += 1
+
+    # Activate sequence if not already
+    if sequence.status == "entwurf":
+        sequence.status = "aktiv"
+
+    db.commit()
+
+    # Return stats
+    stats = get_sequence_stats_internal(seq_id, db)
+    return stats
+
+
+def get_sequence_stats_internal(seq_id: int, db: Session) -> SequenceStats:
+    """Internal helper to get sequence stats."""
+    sequence = db.query(EmailSequence).filter(EmailSequence.id == seq_id).first()
+    assignments = db.query(LeadSequenceAssignment).filter(
+        LeadSequenceAssignment.sequence_id == seq_id
+    ).all()
+
+    return SequenceStats(
+        sequence_id=seq_id,
+        name=sequence.name if sequence else "Unknown",
+        total_assigned=len(assignments),
+        active=sum(1 for a in assignments if a.status == "aktiv"),
+        completed=sum(1 for a in assignments if a.status == "abgeschlossen"),
+        paused=sum(1 for a in assignments if a.status == "pausiert"),
+        unsubscribed=sum(1 for a in assignments if a.status == "abgemeldet"),
+    )
+
+
+@router.get("/emails/sequences/{seq_id}/stats", response_model=SequenceStats)
+def get_sequence_stats(seq_id: int, db: Session = Depends(get_db)):
+    """Get statistics for a sequence."""
+    return get_sequence_stats_internal(seq_id, db)
+
+
+@router.get("/emails/sequences/{seq_id}/leads")
+def get_sequence_leads(seq_id: int, db: Session = Depends(get_db)):
+    """Get all leads assigned to a sequence."""
+    assignments = db.query(LeadSequenceAssignment, Lead).join(
+        Lead, Lead.id == LeadSequenceAssignment.lead_id
+    ).filter(
+        LeadSequenceAssignment.sequence_id == seq_id
+    ).all()
+
+    result = []
+    for assignment, lead in assignments:
+        result.append({
+            "assignment_id": assignment.id,
+            "lead_id": lead.id,
+            "firma": lead.firma,
+            "email": lead.email,
+            "current_step": assignment.current_step,
+            "next_send_at": assignment.next_send_at.isoformat() if assignment.next_send_at else None,
+            "status": assignment.status,
+        })
+
+    return result
+
+
+# ============ Analytics Endpoints ============
+
+@router.get("/emails/analytics/overview", response_model=EmailAnalyticsOverview)
+def get_email_analytics_overview(db: Session = Depends(get_db)):
+    """Get overall email analytics."""
+    # Get all sent emails
+    total_sent = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT
+    ).count()
+
+    delivered = total_sent  # Assume delivered (would need bounce tracking)
+    bounced = 0
+
+    opened = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.opened_at.isnot(None)
+    ).count()
+
+    clicked = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.clicked_at.isnot(None)
+    ).count()
+
+    replied = db.query(EmailHistory).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.replied_at.isnot(None)
+    ).count()
+
+    open_rate = (opened / max(1, delivered)) * 100
+    click_rate = (clicked / max(1, delivered)) * 100
+    response_rate = (replied / max(1, delivered)) * 100
+    bounce_rate = (bounced / max(1, total_sent)) * 100
+
+    return EmailAnalyticsOverview(
+        total_sent=total_sent,
+        delivered=delivered,
+        opened=opened,
+        clicked=clicked,
+        replied=replied,
+        bounced=bounced,
+        open_rate=round(open_rate, 1),
+        click_rate=round(click_rate, 1),
+        response_rate=round(response_rate, 1),
+        bounce_rate=round(bounce_rate, 1),
+    )
+
+
+@router.get("/emails/analytics/by-template", response_model=list[TemplateAnalytics])
+def get_template_analytics(db: Session = Depends(get_db)):
+    """Get analytics grouped by template."""
+    templates = db.query(EmailTemplate).all()
+    results = []
+
+    for template in templates:
+        # Get emails sent with this template (by matching subject pattern)
+        emails = db.query(EmailHistory).filter(
+            EmailHistory.status == EmailStatus.SENT,
+            EmailHistory.campaign_id == None  # Template-based emails
+        ).all()
+
+        # Filter emails that match this template
+        template_emails = [e for e in emails if template.betreff and template.betreff in e.betreff]
+
+        sent = len(template_emails)
+        opened = sum(1 for e in template_emails if e.opened_at)
+        clicked = sum(1 for e in template_emails if e.clicked_at)
+        replied = sum(1 for e in template_emails if e.replied_at)
+
+        results.append(TemplateAnalytics(
+            template_id=template.id,
+            template_name=f"{template.name} (v{template.version})",
+            sent=sent,
+            opened=opened,
+            clicked=clicked,
+            replied=replied,
+            open_rate=round((opened / max(1, sent)) * 100, 1),
+            click_rate=round((clicked / max(1, sent)) * 100, 1),
+            response_rate=round((replied / max(1, sent)) * 100, 1),
+        ))
+
+    return sorted(results, key=lambda x: x.sent, reverse=True)
+
+
+@router.get("/emails/analytics/by-day")
+def get_analytics_by_day(days: int = 30, db: Session = Depends(get_db)):
+    """Get email analytics grouped by day."""
+    from sqlalchemy import func, cast, Date
+
+    start_date = datetime.utcnow() - timedelta(days=days)
+
+    results = db.query(
+        cast(EmailHistory.gesendet_at, Date).label("date"),
+        func.count(EmailHistory.id).label("sent"),
+    ).filter(
+        EmailHistory.status == EmailStatus.SENT,
+        EmailHistory.gesendet_at >= start_date
+    ).group_by(
+        cast(EmailHistory.gesendet_at, Date)
+    ).order_by(
+        cast(EmailHistory.gesendet_at, Date)
+    ).all()
+
+    return [{"date": str(r[0]), "sent": r[1]} for r in results]
+
+
+# ============ Tracking Endpoints ============
+
+@router.get("/track/open/{email_id}")
+def track_email_open(email_id: int, db: Session = Depends(get_db)):
+    """Tracking pixel endpoint for open tracking."""
+    email = db.query(EmailHistory).filter(EmailHistory.id == email_id).first()
+    if email:
+        email.opened_at = datetime.utcnow()
+        db.commit()
+
+    # Return 1x1 transparent GIF
+    import base64
+    gif = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+    from fastapi.responses import Response
+    return Response(content=gif, media_type="image/gif")
+
+
+@router.get("/track/click")
+def track_click(email_id: int, url: str, db: Session = Depends(get_db)):
+    """Track click and redirect to target URL."""
+    email = db.query(EmailHistory).filter(EmailHistory.id == email_id).first()
+    if email:
+        email.clicked_at = datetime.utcnow()
+        db.commit()
+
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=url)

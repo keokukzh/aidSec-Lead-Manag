@@ -132,6 +132,7 @@ class EmailHistory(Base):
         Index("ix_emailhistory_status", "status"),
         Index("ix_emailhistory_gesendet_at", "gesendet_at"),
         Index("ix_emailhistory_lead_id", "lead_id"),
+        Index("ix_emailhistory_ab_test", "ab_test_id"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -142,6 +143,15 @@ class EmailHistory(Base):
     gesendet_at = Column(DateTime, nullable=True)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     outlook_message_id = Column(String(100), nullable=True)  # For Outlook sync
+
+    # A/B Testing
+    ab_test_id = Column(Integer, nullable=True)
+    ab_variant = Column(String(1), nullable=True)  # 'A' or 'B'
+
+    # Tracking
+    opened_at = Column(DateTime, nullable=True)
+    clicked_at = Column(DateTime, nullable=True)
+    replied_at = Column(DateTime, nullable=True)
 
     lead = relationship("Lead", back_populates="email_history")
     campaign = relationship("Campaign", back_populates="email_history")
@@ -155,10 +165,106 @@ class EmailTemplate(Base):
     betreff = Column(String(500), nullable=False)
     inhalt = Column(Text, nullable=False)
     kategorie = Column(SQLEnum(LeadKategorie), nullable=True)
+    # A/B Testing
+    is_ab_test = Column(Boolean, default=False)
+    # Versionierung
+    version = Column(Integer, default=1)
+    parent_template_id = Column(Integer, ForeignKey("email_templates.id"), nullable=True)
+    # Definierbare Variablen
+    variables = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Self-referential relationship for versioning
+    parent = relationship("EmailTemplate", remote_side=[id], foreign_keys=[parent_template_id])
+    children = relationship("EmailTemplate", backref="parent", foreign_keys=[parent_template_id])
 
     def __repr__(self):
-        return f"<EmailTemplate(id={self.id}, name='{self.name}')>"
+        return f"<EmailTemplate(id={self.id}, name='{self.name}', v{self.version})>"
+
+
+class SequenceStatus(str, enum.Enum):
+    ENTWURF = "entwurf"
+    AKTIV = "aktiv"
+    PAUSIERT = "pausiert"
+    ABGESCHLOSSEN = "abgeschlossen"
+
+
+class EmailSequence(Base):
+    """Email outreach sequences with multiple steps"""
+    __tablename__ = "email_sequences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    beschreibung = Column(Text, nullable=True)
+    # JSON Array: [{"day_offset": 0, "template_id": 1, "subject_override": ""}, {"day_offset": 3, "template_id": 2}]
+    steps = Column(JSON, nullable=False, default=list)
+    status = Column(SQLEnum(SequenceStatus), default=SequenceStatus.ENTWURF)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    lead_assignments = relationship("LeadSequenceAssignment", back_populates="sequence", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<EmailSequence(id={self.id}, name='{self.name}', status='{self.status}')>"
+
+
+class LeadSequenceAssignment(Base):
+    """Assignment of a lead to an email sequence"""
+    __tablename__ = "lead_sequence_assignments"
+    __table_args__ = (
+        Index("ix_lsa_sequence_id", "sequence_id"),
+        Index("ix_lsa_lead_id", "lead_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    sequence_id = Column(Integer, ForeignKey("email_sequences.id"), nullable=False)
+    current_step = Column(Integer, default=0)
+    next_send_at = Column(DateTime, nullable=True)
+    status = Column(String(20), default="aktiv")  # aktiv, pausiert, abgeschlossen, abgemeldet
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    lead = relationship("Lead")
+    sequence = relationship("EmailSequence", back_populates="lead_assignments")
+
+    def __repr__(self):
+        return f"<LeadSequenceAssignment(lead={self.lead_id}, seq={self.sequence_id}, step={self.current_step})>"
+
+
+class ABTest(Base):
+    """A/B Test configuration for email subject lines"""
+    __tablename__ = "ab_tests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    template_id = Column(Integer, ForeignKey("email_templates.id"), nullable=True)
+    # Subject line variants
+    subject_a = Column(String(500), nullable=False)
+    subject_b = Column(String(500), nullable=False)
+    # Distribution (default 50/50)
+    distribution_a = Column(Integer, default=50)
+    distribution_b = Column(Integer, default=50)
+    # Status
+    status = Column(String(20), default="draft")  # draft, running, completed
+    winner = Column(String(1), nullable=True)  # 'A' or 'B'
+    # Criteria for auto-winner
+    auto_winner_after = Column(Integer, default=20)  # Number of sends before auto-select
+    # Tracking
+    sent_a = Column(Integer, default=0)
+    sent_b = Column(Integer, default=0)
+    opens_a = Column(Integer, default=0)
+    opens_b = Column(Integer, default=0)
+    clicks_a = Column(Integer, default=0)
+    clicks_b = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<ABTest(id={self.id}, name='{self.name}', status='{self.status}')>"
 
 
 class CampaignStatus(str, enum.Enum):

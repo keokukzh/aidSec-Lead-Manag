@@ -152,6 +152,12 @@ export const leadsApi = {
       body: leadIds
     }),
 
+  bulkSecurityScan: (leadIds: number[]) =>
+    request<{ success: boolean; data: unknown }>("/leads/bulk-security-scan", {
+      method: "POST",
+      body: { lead_ids: leadIds }
+    }),
+
   // Pipeline
   getPipeline: (perStatus?: number) => {
     const query = perStatus ? `?per_status=${perStatus}` : "";
@@ -247,6 +253,212 @@ export const emailsApi = {
       body: data,
     }),
 
+  // Templates
+  listTemplates: () =>
+    request<Array<{
+      id: number;
+      name: string;
+      betreff: string;
+      inhalt: string;
+      kategorie?: string;
+      is_ab_test: boolean;
+      version: number;
+      variables?: Record<string, unknown>;
+      created_at: string;
+    }>>("/emails/custom-templates"),
+
+  createTemplate: (data: { name: string; betreff: string; inhalt: string; kategorie?: string }) =>
+    request<{ id: number }>("/emails/custom-templates", {
+      method: "POST",
+      body: data,
+    }),
+
+  updateTemplate: (id: number, data: { name?: string; betreff?: string; inhalt?: string; kategorie?: string }) =>
+    request<{ success: boolean }>(`/emails/custom-templates/${id}/extend`, {
+      method: "PATCH",
+      body: data,
+    }),
+
+  deleteTemplate: (id: number) =>
+    request<void>(`/emails/custom-templates/${id}`, { method: "DELETE" }),
+
+  duplicateTemplate: (id: number, newName: string) =>
+    request<{ id: number }>(`/emails/custom-templates/${id}/duplicate`, {
+      method: "POST",
+      body: { new_name: newName },
+    }),
+
+  getTemplateVersions: (id: number) =>
+    request<Array<{ id: number; version: number; name: string; betreff: string; created_at: string }>>(
+      `/emails/templates/versions/${id}`
+    ),
+
+  // Analytics
+  getAnalyticsOverview: () =>
+    request<{
+      total_sent: number;
+      delivered: number;
+      opened: number;
+      clicked: number;
+      replied: number;
+      bounced: number;
+      open_rate: number;
+      click_rate: number;
+      response_rate: number;
+      bounce_rate: number;
+    }>("/emails/analytics/overview"),
+
+  getTemplateAnalytics: () =>
+    request<Array<{
+      template_id: number;
+      template_name: string;
+      sent: number;
+      opened: number;
+      clicked: number;
+      replied: number;
+      open_rate: number;
+      click_rate: number;
+      response_rate: number;
+    }>>("/emails/analytics/by-template"),
+
+  getAnalyticsByDay: (days: number = 30) =>
+    request<Array<{ date: string; sent: number }>>(`/emails/analytics/by-day?days=${days}`),
+
+  // A/B Tests
+  listABTests: () =>
+    request<Array<{
+      id: number;
+      name: string;
+      template_id?: number;
+      subject_a: string;
+      subject_b: string;
+      distribution_a: number;
+      distribution_b: number;
+      status: string;
+      winner?: string;
+      sent_a: number;
+      sent_b: number;
+      opens_a: number;
+      opens_b: number;
+      clicks_a: number;
+      clicks_b: number;
+      created_at: string;
+    }>>("/emails/ab-tests"),
+
+  createABTest: (data: {
+    name: string;
+    template_id?: number;
+    subject_a: string;
+    subject_b: string;
+    distribution_a?: number;
+    distribution_b?: number;
+    auto_winner_after?: number;
+  }) =>
+    request<{ id: number }>("/emails/ab-tests", {
+      method: "POST",
+      body: data,
+    }),
+
+  getABTestStats: (id: number) =>
+    request<{
+      test_id: number;
+      name: string;
+      status: string;
+      winner?: string;
+      variant_a: { subject: string; sent: number; opens: number; clicks: number; open_rate: number; click_rate: number };
+      variant_b: { subject: string; sent: number; opens: number; clicks: number; open_rate: number; click_rate: number };
+    }>(`/emails/ab-tests/${id}/stats`),
+
+  startABTest: (id: number) =>
+    request<{ success: boolean }>(`/emails/ab-tests/${id}/start`, { method: "POST" }),
+
+  completeABTest: (id: number, winner: string = "A") =>
+    request<{ success: boolean }>(`/emails/ab-tests/${id}/complete?winner=${winner}`, { method: "POST" }),
+
+  // Sequences
+  listSequences: () =>
+    request<Array<{
+      id: number;
+      name: string;
+      beschreibung?: string;
+      steps: Array<{ day_offset: number; template_id?: number; subject_override?: string }>;
+      status: string;
+      created_at: string;
+    }>>("/emails/sequences"),
+
+  createSequence: (data: {
+    name: string;
+    beschreibung?: string;
+    steps: Array<{ day_offset: number; template_id?: number; subject_override?: string }>;
+  }) =>
+    request<{ id: number }>("/emails/sequences", {
+      method: "POST",
+      body: data,
+    }),
+
+  updateSequence: (id: number, data: { name?: string; beschreibung?: string; steps?: unknown[]; status?: string }) =>
+    request<{ success: boolean }>(`/emails/sequences/${id}`, {
+      method: "PATCH",
+      body: data,
+    }),
+
+  deleteSequence: (id: number) =>
+    request<void>(`/emails/sequences/${id}`, { method: "DELETE" }),
+
+  getSequenceStats: (id: number) =>
+    request<{
+      sequence_id: number;
+      name: string;
+      total_assigned: number;
+      active: number;
+      completed: number;
+      paused: number;
+      unsubscribed: number;
+    }>(`/emails/sequences/${id}/stats`),
+
+  assignLeadsToSequence: (sequenceId: number, leadIds: number[], startNow: boolean = true) =>
+    request<{ success: boolean }>(`/emails/sequences/${sequenceId}/assign`, {
+      method: "POST",
+      body: { lead_ids: leadIds, start_now: startNow },
+    }),
+
+  getSequenceLeads: (id: number) =>
+    request<Array<{
+      assignment_id: number;
+      lead_id: number;
+      firma: string;
+      email: string;
+      current_step: number;
+      next_send_at?: string;
+      status: string;
+    }>>(`/emails/sequences/${id}/leads`),
+
+  // Bulk Send
+  startBulkSend: (data: {
+    lead_ids: number[];
+    subject: string;
+    body: string;
+    delay_seconds: number;
+    subject_variants?: string[];
+  }) =>
+    request<{ job_id: string }>("/emails/bulk-send", {
+      method: "POST",
+      body: data,
+    }),
+
+  getBulkStatus: (jobId: string) =>
+    request<{
+      status: string;
+      total: number;
+      completed: number;
+      sent: number;
+      errors: number;
+    }>(`/emails/bulk-send/${jobId}`),
+
+  cancelBulkSend: (jobId: string) =>
+    request<{ cancelled: boolean }>(`/emails/bulk-send/${jobId}/cancel`, { method: "POST" }),
+
+  // Existing methods
   listDrafts: () =>
     request<Array<{
       id: number;
@@ -269,6 +481,9 @@ export const emailsApi = {
       method: "POST",
       body: { draft_ids: draftIds },
     }),
+
+  getAbTestingStats: () =>
+    request<Array<{ subject: string; sent: number; responded: number; response_rate: number }>>("/emails/ab-testing"),
 
   createOutlookDraft: (data: {
     lead_id: string;

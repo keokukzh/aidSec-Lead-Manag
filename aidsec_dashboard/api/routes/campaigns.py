@@ -189,6 +189,38 @@ def _init_next_send(db: Session, campaign: Campaign):
             cl.next_send_at = target
     db.flush()
 
+@router.post("/campaigns/auto-followup")
+def trigger_auto_followup(db: Session = Depends(get_db)):
+    """Find leads contacted >7 days ago with no response, queue them for an automated follow-up via AgentTask."""
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    
+    leads = db.query(Lead).filter(
+        Lead.status == LeadStatus.PENDING,
+        Lead.updated_at <= seven_days_ago
+    ).all()
+    
+    queued = 0
+    for lead in leads:
+        existing = db.query(AgentTask).filter(
+            AgentTask.target_id == lead.id, 
+            AgentTask.task_type == "draft_followup", 
+            AgentTask.status == "pending"
+        ).first()
+        
+        if not existing:
+            task = AgentTask(
+                agent_type="outreach",
+                task_type="draft_followup",
+                target_id=lead.id,
+                status="pending",
+                context={"reason": "Auto-Follow-up 7 Days", "auto": True}
+            )
+            db.add(task)
+            queued += 1
+            
+    db.commit()
+    return {"success": True, "queued_followups": queued}
+
 @router.post("/campaigns/process-due")
 def process_due_campaigns(db: Session = Depends(get_db)):
     """

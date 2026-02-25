@@ -44,6 +44,36 @@ SORT_MAP = {
 }
 
 
+def _compute_lead_score(lead: Lead) -> int:
+    score = 0
+    if lead.deal_size:
+        score += min(40, lead.deal_size // 1000)
+    
+    if lead.ranking_grade == "A":
+        score += 30
+    elif lead.ranking_grade == "B":
+        score += 20
+    elif lead.ranking_grade in ["D", "F"]:
+        score -= 10
+        
+    if lead.status == LeadStatus.RESPONSE_RECEIVED:
+        score += 40
+    elif lead.status == LeadStatus.OFFER_SENT:
+        score += 50
+    elif lead.status == LeadStatus.NEGOTIATION:
+        score += 60
+    elif lead.status == LeadStatus.GEWONNEN:
+        score += 100
+        
+    return max(0, min(100, score))
+
+
+def _to_lead_out(lead: Lead) -> LeadOut:
+    data = LeadOut.model_validate(lead).model_dump()
+    data["lead_score"] = _compute_lead_score(lead)
+    return LeadOut(**data)
+
+
 @router.get("/leads", response_model=PaginatedLeads)
 @limiter.limit("60/minute")
 def list_leads(request: Request,
@@ -94,7 +124,7 @@ def list_leads(request: Request,
     items = q.offset((page - 1) * per_page).limit(per_page).all()
 
     return PaginatedLeads(
-        items=[LeadOut.model_validate(i) for i in items],
+        items=[_to_lead_out(i) for i in items],
         total=total,
         page=page,
         per_page=per_page,
@@ -119,7 +149,7 @@ def pipeline_view(
         )
         total = db.query(Lead).filter(Lead.status == status).count()
         result[status.value] = {
-            "items": [LeadOut.model_validate(l).model_dump() for l in leads],
+            "items": [_to_lead_out(l).model_dump() for l in leads],
             "total": total,
         }
     return result
@@ -142,7 +172,7 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
         .count()
     )
 
-    data = LeadOut.model_validate(lead).model_dump()
+    data = _to_lead_out(lead).model_dump()
     data["email_count"] = email_count
     data["followup_count"] = followup_count
     return LeadDetail(**data)

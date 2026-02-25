@@ -81,17 +81,20 @@ OPENAI_MODEL=MiniMax-M2.5
 ### 3. Starten
 
 **Windows:**
+
 ```
 start.bat
 ```
 
 **Linux / macOS:**
+
 ```bash
 chmod +x start.sh
 ./start.sh
 ```
 
 **Manuell:**
+
 ```bash
 # Terminal 1: API starten
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
@@ -102,11 +105,11 @@ python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 
 ### 4. Zugriff
 
-| Was          | URL                                  |
-|--------------|--------------------------------------|
-| Dashboard    | http://localhost:8501                |
-| API Docs     | http://localhost:8000/api/docs       |
-| Health Check | http://localhost:8000/api/health     |
+| Was          | URL                              |
+| ------------ | -------------------------------- |
+| Dashboard    | http://localhost:8501            |
+| API Docs     | http://localhost:8000/api/docs   |
+| Health Check | http://localhost:8000/api/health |
 
 ## Team-Zugriff (2–5 Personen)
 
@@ -121,39 +124,40 @@ Alle Teammitglieder im selben Netzwerk können auf das Dashboard zugreifen:
 3. **Passwort eingeben** (wenn `APP_PASSWORD` gesetzt ist)
 
 Für Remote-Zugriff (außerhalb des Netzwerks):
+
 - **Tailscale** (kostenlos): Installieren auf Server + Client → Dashboard über Tailscale-IP erreichbar
 - **Cloudflare Tunnel** (kostenlos): `cloudflared tunnel` einrichten → HTTPS-Zugriff weltweit
 
 ## API-Endpoints
 
-| Methode | Endpoint | Beschreibung |
-|---------|----------|--------------|
-| GET | /api/leads | Leads auflisten (Filter, Pagination, Sortierung) |
-| GET | /api/leads/{id} | Lead-Details |
-| GET | /api/leads/{id}/timeline | Lead-Timeline (Status, E-Mails, Follow-ups) |
-| POST | /api/leads | Lead erstellen |
-| PATCH | /api/leads/{id} | Lead aktualisieren |
-| DELETE | /api/leads/{id} | Lead löschen |
-| POST | /api/leads/bulk-status | Bulk-Statusänderung |
-| POST | /api/emails/send | E-Mail senden |
-| GET | /api/emails/history/{lead_id} | E-Mail-Verlauf pro Lead |
-| GET | /api/emails/history | Globaler E-Mail-Verlauf |
-| POST | /api/emails/generate | KI-generierte E-Mail |
-| GET | /api/emails/templates | Default-Templates |
-| GET/POST | /api/emails/custom-templates | Custom Templates |
-| POST | /api/ranking/check | URL prüfen |
-| POST | /api/ranking/batch | Batch-Prüfung starten |
-| POST | /api/agents/search | Lead-Suche per KI |
-| POST | /api/agents/outreach | Outreach-E-Mail generieren |
-| POST | /api/agents/research/{id} | Auto-Research |
-| GET | /api/dashboard/kpis | Dashboard-KPIs |
-| GET/POST | /api/campaigns | Kampagnen verwalten |
-| GET/POST | /api/followups | Follow-ups verwalten |
-| GET/PUT | /api/settings/{key} | Einstellungen |
-| POST | /api/import/excel | Excel-Import |
-| GET | /api/export/csv | CSV-Export |
-| GET | /api/marketing/ideas | Marketing-Ideen |
-| POST | /api/marketing/recommend | KI-Empfehlungen |
+| Methode  | Endpoint                      | Beschreibung                                     |
+| -------- | ----------------------------- | ------------------------------------------------ |
+| GET      | /api/leads                    | Leads auflisten (Filter, Pagination, Sortierung) |
+| GET      | /api/leads/{id}               | Lead-Details                                     |
+| GET      | /api/leads/{id}/timeline      | Lead-Timeline (Status, E-Mails, Follow-ups)      |
+| POST     | /api/leads                    | Lead erstellen                                   |
+| PATCH    | /api/leads/{id}               | Lead aktualisieren                               |
+| DELETE   | /api/leads/{id}               | Lead löschen                                     |
+| POST     | /api/leads/bulk-status        | Bulk-Statusänderung                              |
+| POST     | /api/emails/send              | E-Mail senden                                    |
+| GET      | /api/emails/history/{lead_id} | E-Mail-Verlauf pro Lead                          |
+| GET      | /api/emails/history           | Globaler E-Mail-Verlauf                          |
+| POST     | /api/emails/generate          | KI-generierte E-Mail                             |
+| GET      | /api/emails/templates         | Default-Templates                                |
+| GET/POST | /api/emails/custom-templates  | Custom Templates                                 |
+| POST     | /api/ranking/check            | URL prüfen                                       |
+| POST     | /api/ranking/batch            | Batch-Prüfung starten                            |
+| POST     | /api/agents/search            | Lead-Suche per KI                                |
+| POST     | /api/agents/outreach          | Outreach-E-Mail generieren                       |
+| POST     | /api/agents/research/{id}     | Auto-Research                                    |
+| GET      | /api/dashboard/kpis           | Dashboard-KPIs                                   |
+| GET/POST | /api/campaigns                | Kampagnen verwalten                              |
+| GET/POST | /api/followups                | Follow-ups verwalten                             |
+| GET/PUT  | /api/settings/{key}           | Einstellungen                                    |
+| POST     | /api/import/excel             | Excel-Import                                     |
+| GET      | /api/export/csv               | CSV-Export                                       |
+| GET      | /api/marketing/ideas          | Marketing-Ideen                                  |
+| POST     | /api/marketing/recommend      | KI-Empfehlungen                                  |
 
 Interaktive API-Dokumentation: http://localhost:8000/api/docs
 
@@ -226,12 +230,14 @@ SMTP_FROM_EMAIL=aid.destani@aidsec.ch
 ### LLM (KI-Agenten)
 
 **LM Studio (lokal)**:
+
 ```env
 LM_STUDIO_URL=http://localhost:1234/v1
 DEFAULT_PROVIDER=lm_studio
 ```
 
 **OpenAI-kompatibel** (MiniMax, OpenRouter, Groq, DeepSeek, etc.):
+
 ```env
 DEFAULT_PROVIDER=openai_compatible
 OPENAI_BASE_URL=https://api.minimax.io/v1
@@ -241,10 +247,10 @@ OPENAI_MODEL=MiniMax-M2.5
 
 ## Lead-Kategorien
 
-| Kategorie | Zielgruppe | Empfohlenes Produkt |
-|-----------|------------|---------------------|
-| Anwalt | Anwaltskanzleien | Kanzlei-Härtung (CHF 950.–) |
-| Praxis | Arztpraxen | Rapid Header Fix (CHF 490.–) |
+| Kategorie | Zielgruppe       | Empfohlenes Produkt          |
+| --------- | ---------------- | ---------------------------- |
+| Anwalt    | Anwaltskanzleien | Kanzlei-Härtung (CHF 950.–)  |
+| Praxis    | Arztpraxen       | Rapid Header Fix (CHF 490.–) |
 | WordPress | WordPress-Nutzer | Rapid Header Fix (CHF 490.–) |
 
 ## E-Mail Outreach Workflow

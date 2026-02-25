@@ -137,6 +137,17 @@ export default function LeadsPage() {
     },
   });
 
+  // Bulk Security Scan mutation
+  const bulkSecurityScanMutation = useMutation({
+    mutationFn: (ids: number[]) => leadsApi.bulkSecurityScan(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      setSelectedLeads(new Set());
+      setBulkAction("");
+      alert("Security-Scan gestartet. Ergebnisse erscheinen in Kürze.");
+    },
+  });
+
   const handleSelectAll = () => {
     if (selectedLeads.size === leads.length) {
       setSelectedLeads(new Set());
@@ -164,6 +175,8 @@ export default function LeadsPage() {
       if (confirm(`${ids.length} Leads wirklich löschen?`)) {
         bulkDeleteMutation.mutate(ids);
       }
+    } else if (bulkAction === "security-scan") {
+      bulkSecurityScanMutation.mutate(ids);
     } else if (bulkAction === "offen" || bulkAction === "pending" || bulkAction === "gewonnen" || bulkAction === "verloren") {
       bulkStatusMutation.mutate({ ids, status: bulkAction });
     }
@@ -282,16 +295,17 @@ export default function LeadsPage() {
               <option value="pending">Status: Pending</option>
               <option value="gewonnen">Status: Gewonnen</option>
               <option value="verloren">Status: Verloren</option>
+              <option value="security-scan" className="text-[#00d4aa]">Security-Scan ausführen</option>
               <option value="delete" className="text-red-500">
                 Löschen
               </option>
             </select>
             <button
               onClick={handleBulkAction}
-              disabled={!bulkAction || bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+              disabled={!bulkAction || bulkStatusMutation.isPending || bulkDeleteMutation.isPending || bulkSecurityScanMutation.isPending}
               className="flex items-center gap-1 rounded-md bg-[#00d4aa] px-3 py-1.5 text-sm font-semibold text-[#0e1117] disabled:opacity-50"
             >
-              {bulkStatusMutation.isPending || bulkDeleteMutation.isPending ? (
+              {bulkStatusMutation.isPending || bulkDeleteMutation.isPending || bulkSecurityScanMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 "Ausführen"
@@ -354,6 +368,9 @@ export default function LeadsPage() {
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#b8bec6]">
                     Rank
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#b8bec6]">
+                    Score
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[#b8bec6]">
                     Quelle
@@ -431,6 +448,16 @@ export default function LeadsPage() {
                           {lead.ranking_grade}
                         </span>
                       )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className={cn(
+                        "inline-flex items-center justify-center min-w-[32px] rounded-sm px-1.5 py-0.5 text-xs font-medium border",
+                        (lead.lead_score || 0) >= 60 ? "bg-[#00d4aa]/10 text-[#00d4aa] border-[#00d4aa]/20" :
+                        (lead.lead_score || 0) >= 30 ? "bg-[#f39c12]/10 text-[#f39c12] border-[#f39c12]/20" :
+                        "bg-[#e74c3c]/10 text-[#e74c3c] border-[#e74c3c]/20"
+                      )}>
+                        {lead.lead_score || 0}
+                      </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-[#b8bec6]">
                       {lead.quelle || "—"}

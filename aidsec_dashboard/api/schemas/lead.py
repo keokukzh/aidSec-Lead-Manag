@@ -58,6 +58,7 @@ class LeadOut(LeadBase):
     research_status: Optional[str] = None
     research_last: Optional[datetime] = None
     research_data: Optional[Any] = None
+    lead_score: Optional[int] = 0
 
 
 class LeadDetail(LeadOut):

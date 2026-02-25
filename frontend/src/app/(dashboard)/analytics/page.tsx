@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { analyticsApi } from "@/lib/api";
+import { analyticsApi, emailsApi } from "@/lib/api";
 import {
   BarChart2,
   Mail,
@@ -21,6 +21,11 @@ export default function AnalyticsPage() {
   const { data: campaignPerf, isLoading: loadingCampaigns } = useQuery({
     queryKey: ["campaignPerformance"],
     queryFn: () => analyticsApi.getCampaignPerformance(),
+  });
+
+  const { data: abStats, isLoading: loadingAbStats } = useQuery({
+    queryKey: ["abTestingStats"],
+    queryFn: () => emailsApi.getAbTestingStats(),
   });
 
   if (loadingHealth || loadingCampaigns) {
@@ -120,6 +125,33 @@ export default function AnalyticsPage() {
               <div className="col-span-2 text-right text-[#00d4aa]">{camp.replies}</div>
               <div className="col-span-2 text-right text-[#00d4aa]">{camp.reply_rate_pct}%</div>
               <div className="col-span-1 text-right text-emerald-500 font-medium">{camp.won}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* A/B Testing Details Table */}
+      <h2 className="text-xl font-semibold mt-8 mb-4">A/B Testing: Betreff-Performance</h2>
+      <div className="rounded-md border border-border bg-card">
+        <div className="grid grid-cols-12 gap-4 border-b border-border p-4 bg-muted/40 font-medium text-sm text-foreground">
+          <div className="col-span-6">Subject Line</div>
+          <div className="col-span-2 text-right">Sent</div>
+          <div className="col-span-2 text-right">Responded</div>
+          <div className="col-span-2 text-right">Success Rate</div>
+        </div>
+        <div className="divide-y divide-border">
+          {loadingAbStats && (
+            <div className="p-4 text-center text-muted-foreground text-sm">Loading...</div>
+          )}
+          {!loadingAbStats && (!abStats || abStats.length === 0) && (
+             <div className="p-4 text-center text-muted-foreground text-sm">No A/B testing data available</div>
+          )}
+          {abStats?.map((stat, i) => (
+            <div key={i} className="grid grid-cols-12 gap-4 p-4 text-sm items-center hover:bg-muted/20 transition-colors">
+              <div className="col-span-6 font-medium text-foreground truncate">{stat.subject}</div>
+              <div className="col-span-2 text-right text-muted-foreground">{stat.sent}</div>
+              <div className="col-span-2 text-right text-[#00d4aa]">{stat.responded}</div>
+              <div className="col-span-2 text-right text-emerald-500 font-medium">{stat.response_rate}%</div>
             </div>
           ))}
         </div>

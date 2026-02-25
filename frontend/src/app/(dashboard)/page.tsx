@@ -150,6 +150,27 @@ export default function DashboardPage() {
             />
           </div>
 
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <MetricCard 
+              label="Total Pipeline (CHF)" 
+              value={kpis?.revenue?.total_pipeline ? `CHF ${kpis?.revenue?.total_pipeline.toLocaleString()}` : "CHF 0"} 
+              icon={Activity} 
+              color="#3498db" 
+            />
+            <MetricCard 
+              label="Won Revenue (CHF)" 
+              value={kpis?.revenue?.won_deals ? `CHF ${kpis?.revenue?.won_deals.toLocaleString()}` : "CHF 0"} 
+              icon={CheckCircle2} 
+              color="#2ecc71" 
+            />
+            <MetricCard 
+              label="Avg Deal Size (CHF)" 
+              value={kpis?.revenue?.avg_deal_size ? `CHF ${kpis?.revenue?.avg_deal_size.toLocaleString()}` : "CHF 0"} 
+              icon={Target} 
+              color="#f1c40f" 
+            />
+          </div>
+
           {/* Intelligence Pulse Section */}
           <div className="rounded-2xl border border-[#2a3040] bg-[#1a1f2e] overflow-hidden">
             <div className="border-b border-[#2a3040] bg-[#1a1f2e] px-6 py-4 flex items-center justify-between">
