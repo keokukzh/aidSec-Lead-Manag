@@ -86,6 +86,14 @@ def pull_agent_task(
     _authorize_agent(request, agent_id)
 
     now = datetime.utcnow()
+    is_sqlite = (getattr(getattr(db, "bind", None), "dialect", None) is not None and db.bind.dialect.name == "sqlite")
+
+    if is_sqlite:
+        stale_filter = func.datetime(AgentTask.lease_until) < func.datetime(now)
+        retry_ready_filter = func.datetime(AgentTask.next_retry_at) <= func.datetime(now)
+    else:
+        stale_filter = AgentTask.lease_until < now
+        retry_ready_filter = AgentTask.next_retry_at <= now
 
     # Reclaim stale processing tasks (lease expired)
     stale_tasks = (
@@ -93,7 +101,7 @@ def pull_agent_task(
         .filter(
             AgentTask.status == "processing",
             AgentTask.lease_until.isnot(None),
-            func.datetime(AgentTask.lease_until) < func.datetime(now),
+            stale_filter,
         )
         .all()
     )
@@ -120,7 +128,7 @@ def pull_agent_task(
             AgentTask.status == "pending",
             or_(
                 AgentTask.next_retry_at.is_(None),
-                func.datetime(AgentTask.next_retry_at) <= func.datetime(now),
+                retry_ready_filter,
             ),
         )
         .order_by(AgentTask.created_at.asc())
