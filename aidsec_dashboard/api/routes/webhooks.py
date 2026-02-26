@@ -98,7 +98,8 @@ async def handle_telegram_webhook(request: Request, db: Session = Depends(get_db
         return {"ok": False, "error": "invalid_secret"}
 
     payload = await request.json()
-    return process_telegram_update(payload, db)
+    relay_mode = request.headers.get("x-aidsec-telegram-relay", "").strip() == "1"
+    return process_telegram_update(payload, db, send_reply=not relay_mode)
 
 
 @router.get("/webhooks/telegram/health")

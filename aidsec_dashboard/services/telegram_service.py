@@ -240,7 +240,7 @@ def _handle_run_command(db: Session, parts: list[str]) -> str:
     return "Unknown run command. Use: run process-due | run auto-followup"
 
 
-def process_telegram_update(update: dict[str, Any], db: Session) -> dict[str, Any]:
+def process_telegram_update(update: dict[str, Any], db: Session, send_reply: bool = True) -> dict[str, Any]:
     ctx = _extract_context(update)
     if not ctx:
         return {"ok": True, "ignored": "unsupported_update"}
@@ -252,7 +252,8 @@ def process_telegram_update(update: dict[str, Any], db: Session) -> dict[str, An
         return {"ok": True, "ignored": "not_allowlisted"}
 
     if not ctx.text:
-        _send_message(ctx.chat_id, _cmd_help())
+        if send_reply:
+            _send_message(ctx.chat_id, _cmd_help())
         return {"ok": True, "message": "empty_text"}
 
     normalized = ctx.text.strip().lower()
@@ -260,7 +261,8 @@ def process_telegram_update(update: dict[str, Any], db: Session) -> dict[str, An
     parts = normalized.split()
 
     if not parts:
-        _send_message(ctx.chat_id, _cmd_help())
+        if send_reply:
+            _send_message(ctx.chat_id, _cmd_help())
         return {"ok": True, "message": "empty_command"}
 
     if parts[0] == "task":
@@ -279,5 +281,6 @@ def process_telegram_update(update: dict[str, Any], db: Session) -> dict[str, An
     else:
         reply = _cmd_help()
 
-    _send_message(ctx.chat_id, reply)
+    if send_reply:
+        _send_message(ctx.chat_id, reply)
     return {"ok": True, "reply": reply}
