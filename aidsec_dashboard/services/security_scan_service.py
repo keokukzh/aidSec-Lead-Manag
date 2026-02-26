@@ -2,15 +2,43 @@
 import asyncio
 import base64
 from typing import Dict, Any, Optional
-from playwright.async_api import async_playwright
+
+from services.ranking_service import get_ranking_service
 
 async def security_scan(website_url: str, capture_screenshot: bool = False) -> Dict[str, Any]:
-    """Scan securityheaders.com using Playwright."""
+    """Scan website security data.
+
+    - Non-screenshot mode: uses RankingService (Railway-safe, no browser dependency).
+    - Screenshot mode: tries Playwright and falls back with a clear error when unavailable.
+    """
     if not website_url:
         return {"success": False, "error": "No website URL provided"}
         
     if not website_url.startswith("http"):
         website_url = f"https://{website_url}"
+
+    if not capture_screenshot:
+        try:
+            svc = get_ranking_service()
+            result = svc.check_url(website_url)
+            return {
+                "success": True,
+                "grade": result.get("grade"),
+                "url": result.get("url") or website_url,
+                "score": result.get("score"),
+                "headers": result.get("headers") or [],
+                "screenshot_b64": None,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    try:
+        from playwright.async_api import async_playwright
+    except Exception:
+        return {
+            "success": False,
+            "error": "Playwright/Chromium not available on this environment",
+        }
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -31,9 +59,9 @@ async def security_scan(website_url: str, capture_screenshot: bool = False) -> D
                     grade = await grade_element_handle.text_content()
                     grade = grade.strip()
                 else:
-                    grade = "N/A"
+                    grade = None
             except Exception:
-                grade = "Error"
+                grade = None
                 
             screenshot_b64 = None
             if capture_screenshot:

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from api.dependencies import get_db, verify_api_key
 from services.enrichment_service import enrich_lead
+from services.ranking_service import get_ranking_service
 from api.schemas.lead import (
     LeadCreate,
     LeadUpdate,
@@ -232,9 +233,13 @@ async def trigger_security_scan(lead_id: int, db: Session = Depends(get_db)):
     if not result.get("success"):
         raise HTTPException(502, f"Scan failed: {result.get('error')}")
         
-    lead.ranking_grade = result.get("grade")
-    # optionally store details
-    lead.ranking_details = {"scan_url": result.get("url"), "last_scanned": datetime.utcnow().isoformat()}
+    lead.ranking_grade = get_ranking_service().normalize_grade(result.get("grade"))
+    lead.ranking_details = {
+        "scan_url": result.get("url"),
+        "score": result.get("score"),
+        "headers": result.get("headers") or [],
+        "last_scanned": datetime.utcnow().isoformat(),
+    }
     db.commit()
     db.refresh(lead)
 
@@ -265,8 +270,13 @@ async def bulk_security_scan(payload: BulkSecurityScanRequest, db: Session = Dep
                 # Usually we still save the new grade, but we can return it as skipped from the bulk action perspective.
                 pass
                 
-            lead.ranking_grade = grade
-            lead.ranking_details = {"scan_url": res.get("url"), "last_scanned": datetime.utcnow().isoformat()}
+            lead.ranking_grade = get_ranking_service().normalize_grade(grade)
+            lead.ranking_details = {
+                "scan_url": res.get("url"),
+                "score": res.get("score"),
+                "headers": res.get("headers") or [],
+                "last_scanned": datetime.utcnow().isoformat(),
+            }
             results.append({"id": lead.id, "success": True, "grade": grade})
         else:
             results.append({"id": lead.id, "success": False, "error": res.get("error")})
@@ -319,8 +329,13 @@ async def get_lead_screenshot(lead_id: int, db: Session = Depends(get_db)):
         raise HTTPException(502, f"Screenshot failed: {result.get('error')}")
         
     # We also update the grade since we scanned it anyway
-    lead.ranking_grade = result.get("grade")
-    lead.ranking_details = {"scan_url": result.get("url"), "last_scanned": datetime.utcnow().isoformat()}
+    lead.ranking_grade = get_ranking_service().normalize_grade(result.get("grade"))
+    lead.ranking_details = {
+        "scan_url": result.get("url"),
+        "score": result.get("score"),
+        "headers": result.get("headers") or [],
+        "last_scanned": datetime.utcnow().isoformat(),
+    }
     db.commit()
 
     return {

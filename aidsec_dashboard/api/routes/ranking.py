@@ -13,6 +13,10 @@ from api.schemas.common import RankingCheckRequest, RankingBatchRequest
 from database.models import Lead
 from services.ranking_service import get_ranking_service
 
+
+def _normalized_grade(value: str | None) -> str | None:
+    return get_ranking_service().normalize_grade(value)
+
 router = APIRouter(tags=["ranking"], dependencies=[Depends(verify_api_key)])
 
 _batch_jobs: dict[str, dict] = {}
@@ -37,7 +41,7 @@ def check_lead(lead_id: int, db: Session = Depends(get_db)):
     result = svc.check_url(lead.website)
 
     lead.ranking_score = result.get("score")
-    lead.ranking_grade = result.get("grade")
+    lead.ranking_grade = _normalized_grade(result.get("grade"))
     lead.ranking_details = result.get("headers")
     lead.ranking_checked_at = datetime.utcnow()
     db.commit()
@@ -63,7 +67,7 @@ def _run_batch(job_id: str, lead_ids: list[int]):
             try:
                 result = svc.check_url(lead.website)
                 lead.ranking_score = result.get("score")
-                lead.ranking_grade = result.get("grade")
+                lead.ranking_grade = _normalized_grade(result.get("grade"))
                 lead.ranking_details = result.get("headers")
                 lead.ranking_checked_at = datetime.utcnow()
                 session.flush()

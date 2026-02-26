@@ -76,6 +76,25 @@ class RankingService:
                 "checked_at": datetime.utcnow().isoformat(),
             }
 
+    @staticmethod
+    def normalize_grade(value: str | None) -> str | None:
+        """Normalize external grade values to a single DB-safe letter or None."""
+        if value is None:
+            return None
+
+        cleaned = str(value).strip().upper()
+        if not cleaned:
+            return None
+
+        if cleaned in {"N/A", "NA", "NONE", "NULL", "ERROR", "UNKNOWN"}:
+            return None
+
+        first = cleaned[0]
+        if first in {"A", "B", "C", "D", "E", "F"}:
+            return first
+
+        return None
+
     def _check_direct(self, url: str) -> Dict:
         """Inspect the target site's HTTP headers directly and compute a grade."""
         resp = requests.get(
@@ -120,7 +139,7 @@ class RankingService:
         return {
             "url": url,
             "score": score,
-            "grade": grade,
+            "grade": self.normalize_grade(grade),
             "headers": headers_info,
             "checked_at": datetime.utcnow().isoformat(),
             "ssl_valid": True,  # requests didn't fail
@@ -206,6 +225,7 @@ class RankingService:
                     result["grade"] = text
                     break
 
+        result["grade"] = self.normalize_grade(result.get("grade"))
         return result
 
     def check_batch(self, urls: List[str], progress_callback=None) -> List[Dict]:
