@@ -17,6 +17,43 @@ from services.outreach import parse_llm_json, detect_email_type
 router = APIRouter(tags=["agents"], dependencies=[Depends(verify_api_key)])
 
 
+def _fallback_outreach(lead: Lead, email_type: str) -> dict:
+    category = lead.kategorie.value if getattr(lead, "kategorie", None) else "Unternehmen"
+    firm = lead.firma or "Ihr Unternehmen"
+    website = lead.website or "Ihre Website"
+
+    if email_type == "angebot":
+        subject = f"Sicherheits-Check für {firm}"
+        body = (
+            f"Guten Tag\n\n"
+            f"bei einer kurzen Sichtung von {website} sind mir Sicherheitsaspekte aufgefallen, "
+            f"die für {category} relevant sind.\n\n"
+            f"Wenn Sie möchten, sende ich Ihnen eine kompakte Prioritätenliste mit den ersten "
+            f"technischen Massnahmen.\n\n"
+            f"Freundliche Grüsse\nAidSec"
+        )
+    elif email_type == "nachfassen":
+        subject = f"Kurze Rückfrage zur Website-Sicherheit"
+        body = (
+            f"Guten Tag\n\n"
+            f"ich wollte kurz nachfassen: Für {firm} wäre ein kurzer Header- und TLS-Check "
+            f"ein pragmatischer erster Schritt, um Risiken zu reduzieren.\n\n"
+            f"Passt Ihnen dazu ein 10-minütiger Austausch?\n\n"
+            f"Freundliche Grüsse\nAidSec"
+        )
+    else:
+        subject = f"Hinweis zur Website-Sicherheit"
+        body = (
+            f"Guten Tag\n\n"
+            f"bei {website} habe ich Punkte gesehen, die für den Schutz sensibler Daten relevant "
+            f"sein können.\n\n"
+            f"Gerne zeige ich Ihnen in einem kurzen Austausch die wichtigsten Massnahmen für {firm}.\n\n"
+            f"Freundliche Grüsse\nAidSec"
+        )
+
+    return {"success": True, "betreff": subject, "inhalt": body, "fallback": True}
+
+
 @router.post("/agents/search")
 def search_leads(payload: AgentSearchRequest):
     llm = get_llm_service()
@@ -45,9 +82,13 @@ def generate_outreach(payload: GenerateEmailRequest, db: Session = Depends(get_d
         raise HTTPException(404, "Lead not found")
 
     llm = get_llm_service()
-    result = llm.generate_outreach_email(lead, db, email_type=payload.email_type)
+    try:
+        result = llm.generate_outreach_email(lead, db, email_type=payload.email_type)
+    except Exception:
+        return _fallback_outreach(lead, payload.email_type)
+
     if not result.get("success"):
-        raise HTTPException(502, result.get("error", "LLM generation failed"))
+        return _fallback_outreach(lead, payload.email_type)
 
     try:
         parsed = parse_llm_json(result["content"])
