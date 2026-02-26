@@ -6,15 +6,18 @@ AGENT_KEY="agt2_5aea9e57cb08417b9e64888b1ef14a87"
 GLOBAL_API_KEY="aidsec_api_a4da3c7956334a7b94d3c2e374e69961"
 API_BASE_URL="https://aidsec-lead-manag-production-7292.up.railway.app/api"
 INSTALL_DIR="/opt/aidSec-Lead-Manag/aidsec_dashboard"
+REPO_DIR="/opt/aidSec-Lead-Manag"
+SERVICE_NAME="aidsec-agent-${AGENT_ID}.service"
 
 apt-get update -y
-apt-get install -y git python3 python3-venv
+apt-get install -y git python3 python3-venv python3-pip curl ca-certificates
 
 mkdir -p /opt
-if [ ! -d /opt/aidSec-Lead-Manag ]; then
-  git clone https://github.com/keokukzh/aidSec-Lead-Manag.git /opt/aidSec-Lead-Manag
+if [ ! -d "$REPO_DIR/.git" ]; then
+  git clone https://github.com/keokukzh/aidSec-Lead-Manag.git "$REPO_DIR"
 else
-  git -C /opt/aidSec-Lead-Manag pull --ff-only
+  git -C "$REPO_DIR" fetch --all --prune
+  git -C "$REPO_DIR" reset --hard origin/main
 fi
 
 cd "$INSTALL_DIR"
@@ -34,6 +37,7 @@ AIDSEC_POLL_INTERVAL_SECONDS=10
 AIDSEC_REQUEST_TIMEOUT_SECONDS=30
 AIDSEC_AGENT_LOG_LEVEL=INFO
 EOF
+chmod 600 .env.agent
 
 cat > /etc/systemd/system/aidsec-agent-${AGENT_ID}.service <<EOF
 [Unit]
@@ -55,9 +59,16 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now aidsec-agent-${AGENT_ID}.service
+systemctl enable "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 sleep 2
-systemctl --no-pager --full status aidsec-agent-${AGENT_ID}.service | sed -n '1,40p'
-journalctl -u aidsec-agent-${AGENT_ID}.service -n 40 --no-pager
+systemctl --no-pager --full status "$SERVICE_NAME" | sed -n '1,40p'
+journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+
+echo "=== API Health ==="
+curl -sS "${API_BASE_URL%/api}/api/health" || true
+
+echo "=== Agent Pull Check ==="
+curl -sS -H "Authorization: Bearer ${GLOBAL_API_KEY}" -H "X-API-Key: ${AGENT_KEY}" "${API_BASE_URL}/agents/tasks/pull?agent_id=${AGENT_ID}&lease_seconds=120" || true
 
 echo "✅ Agent ${AGENT_ID} setup complete"
