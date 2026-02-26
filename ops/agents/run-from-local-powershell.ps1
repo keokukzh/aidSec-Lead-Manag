@@ -8,10 +8,10 @@ $script1 = "$repo/ops/agents/setup-agent1-100.88.218.9.sh"
 $script2 = "$repo/ops/agents/setup-agent2-100.87.63.92.sh"
 
 Write-Host 'Uploading + running setup on agent1 (100.88.218.9)...'
-type $script1 | ssh root@100.88.218.9 'bash -s'
+(Get-Content -Raw $script1) -replace "`r", "" | ssh root@100.88.218.9 'bash -s'
 
 Write-Host 'Uploading + running setup on agent2 (100.87.63.92)...'
-type $script2 | ssh root@100.87.63.92 'bash -s'
+(Get-Content -Raw $script2) -replace "`r", "" | ssh root@100.87.63.92 'bash -s'
 
 Write-Host 'Done. Checking API pull endpoint for both agents...'
 $base = 'https://aidsec-lead-manag-production-7292.up.railway.app/api'
