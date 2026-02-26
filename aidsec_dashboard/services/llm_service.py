@@ -477,6 +477,12 @@ class LLMService:
 
         parts = []
         kategorie = lead.kategorie.value if lead.kategorie else "wordpress"
+        ranking_details = lead.ranking_details
+        if isinstance(ranking_details, dict):
+            nested_headers = ranking_details.get("headers")
+            ranking_details = nested_headers if isinstance(nested_headers, list) else []
+        elif not isinstance(ranking_details, list):
+            ranking_details = []
 
         # -- Lead basics --
         parts.append("LEAD-DATEN:")
@@ -504,9 +510,9 @@ class LLMService:
         parts.append("")
 
         # -- Security ranking intelligence --
-        worst = pick_worst_header(lead.ranking_details, kategorie)
+        worst = pick_worst_header(ranking_details, kategorie)
 
-        if lead.ranking_grade or lead.ranking_details:
+        if lead.ranking_grade or ranking_details:
             parts.append("SICHERHEITSANALYSE DER WEBSITE:")
             if lead.ranking_grade:
                 parts.append(
@@ -526,10 +532,10 @@ class LLMService:
                     f"  * Konkretes Risiko fuer diesen Kunden: {worst['industry_risk']}"
                 )
 
-            if lead.ranking_details:
+            if ranking_details:
                 missing = []
                 present = []
-                for h in lead.ranking_details:
+                for h in ranking_details:
                     name = h.get("name", "?")
                     if h.get("rating") == "bad":
                         intel = HEADER_INTELLIGENCE.get(name, {})
