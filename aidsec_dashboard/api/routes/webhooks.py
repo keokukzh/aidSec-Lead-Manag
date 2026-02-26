@@ -1,4 +1,5 @@
 """Webhook handlers for third-party integrations (e.g., Brevo Inbound Parse)."""
+import os
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -11,8 +12,19 @@ from database.models import (
     LeadStatus,
     StatusHistory
 )
+from services.telegram_service import process_telegram_update
 
 router = APIRouter(tags=["webhooks"])
+
+
+def _telegram_secret_ok(request: Request) -> bool:
+    expected = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    if not expected:
+        return True
+
+    header_value = request.headers.get("x-telegram-bot-api-secret-token", "").strip()
+    query_value = request.query_params.get("secret", "").strip()
+    return header_value == expected or query_value == expected
 
 @router.post("/webhooks/inbound-email")
 async def handle_inbound_email(request: Request, db: Session = Depends(get_db)):
@@ -76,4 +88,24 @@ async def handle_inbound_email(request: Request, db: Session = Depends(get_db)):
     return {
         "status": "success",
         "action": f"Paused {len(active_campaigns)} campaigns and created a follow-up for lead {lead.id}"
+    }
+
+
+@router.post("/webhooks/telegram")
+async def handle_telegram_webhook(request: Request, db: Session = Depends(get_db)):
+    """Handle Telegram bot updates and map commands to task queue operations."""
+    if not _telegram_secret_ok(request):
+        return {"ok": False, "error": "invalid_secret"}
+
+    payload = await request.json()
+    return process_telegram_update(payload, db)
+
+
+@router.get("/webhooks/telegram/health")
+def telegram_webhook_health():
+    return {
+        "ok": True,
+        "webhook_secret_configured": bool(os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()),
+        "allowed_chat_ids_configured": bool(os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").strip()),
+        "allowed_user_ids_configured": bool(os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").strip()),
     }

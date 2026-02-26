@@ -121,8 +121,8 @@ def pull_agent_task(
 
     db.flush()
 
-    # Find oldest pending and retry-ready task
-    task = (
+    # Find oldest pending and retry-ready tasks
+    candidates = (
         db.query(AgentTask)
         .filter(
             AgentTask.status == "pending",
@@ -132,8 +132,19 @@ def pull_agent_task(
             ),
         )
         .order_by(AgentTask.created_at.asc())
-        .first()
+        .limit(200)
+        .all()
     )
+
+    task = None
+    for candidate in candidates:
+        payload = candidate.payload if isinstance(candidate.payload, dict) else {}
+        if payload.get("agent_hint") == agent_id:
+            task = candidate
+            break
+
+    if task is None and candidates:
+        task = candidates[0]
     
     if not task:
         db.commit()
