@@ -234,9 +234,9 @@ export const rankingApi = {
     const searchParams = new URLSearchParams();
     if (params?.kategorie) searchParams.set("kategorie", params.kategorie);
     if (params?.limit) searchParams.set("limit", String(params.limit));
+    searchParams.set("sort", "ranking");
     const query = searchParams.toString();
-    // Use leads endpoint with sorting by ranking
-    return request<{ items: unknown[] }>(`/leads${query ? `?${query}` : ""}&sort=ranking`)
+    return request<{ items: unknown[] }>(`/leads${query ? `?${query}` : ""}`)
       .then(res => res.items || []);
   },
 
@@ -263,21 +263,29 @@ export const rankingApi = {
 // Emails
 export const emailsApi = {
   generate: (data: {
-    lead_id: string;
-    campaign_id?: string;
+    lead_id: string | number;
+    campaign_id?: string | number;
     stufe?: number;
-  }) => request<{ subject?: string; body?: string; betreff?: string; inhalt?: string }>("/emails/generate", {
-    method: "POST",
-    body: data,
-  }).then((res) => ({
-    subject: res.subject ?? res.betreff ?? "",
-    body: res.body ?? res.inhalt ?? "",
-  })),
+  }) => {
+    const emailTypeMap: Record<number, string> = { 1: "erstkontakt", 2: "nachfassen", 3: "angebot" };
+    const body = {
+      lead_id: Number(data.lead_id),
+      email_type: data.stufe ? (emailTypeMap[data.stufe] ?? "erstkontakt") : "erstkontakt",
+      ...(data.campaign_id != null && { campaign_id: Number(data.campaign_id) }),
+    };
+    return request<{ subject?: string; body?: string; betreff?: string; inhalt?: string }>("/emails/generate", {
+      method: "POST",
+      body,
+    }).then((res) => ({
+      subject: res.subject ?? res.betreff ?? "",
+      body: res.body ?? res.inhalt ?? "",
+    }));
+  },
 
-  send: (data: { lead_id: string; subject: string; body: string }) =>
+  send: (data: { lead_id: string | number; subject: string; body: string }) =>
     request<{ success: boolean; message: string }>("/emails/send", {
       method: "POST",
-      body: data,
+      body: { ...data, lead_id: Number(data.lead_id) },
     }),
 
   preview: (data: { lead_id: number; template_id: number; preview_type: "desktop" | "mobile" | "plain" }) =>
@@ -789,7 +797,7 @@ export const importExportApi = {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await fetch(`${API_BASE_URL}/import/export`, {
+    const response = await fetch(`${API_BASE_URL}/import/excel`, {
       method: "POST",
       body: formData,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -811,7 +819,7 @@ export const importExportApi = {
     if (params?.status) searchParams.set("status", params.status);
     if (params?.kategorie) searchParams.set("kategorie", params.kategorie);
     const query = searchParams.toString();
-    window.open(`${API_BASE_URL}/import/export/download${query ? `?${query}` : ""}`);
+    window.open(`${API_BASE_URL}/export/excel${query ? `?${query}` : ""}`);
   },
 };
 
