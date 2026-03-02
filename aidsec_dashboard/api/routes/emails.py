@@ -55,6 +55,7 @@ from database.models import (
     EmailSequence,
     LeadSequenceAssignment,
     ABTest,
+    BulkEmailJob,
 )
 from services.email_service import get_email_service, DEFAULT_TEMPLATES
 from services.llm_service import get_llm_service
@@ -66,8 +67,6 @@ from services.sequence_execution_service import (
 )
 
 router = APIRouter(tags=["emails"], dependencies=[Depends(verify_api_key)])
-
-_bulk_email_jobs: dict[str, dict] = {}
 
 
 def _load_signature(db: Session) -> dict:
@@ -133,10 +132,13 @@ def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl
     """Background task: send emails to multiple leads with delay, supporting A/B subjects."""
     from database.database import get_session
     session = get_session()
-    job = _bulk_email_jobs[job_id]
     svc = get_email_service()
 
     try:
+        job = session.query(BulkEmailJob).filter(BulkEmailJob.job_id == job_id).first()
+        if not job:
+            return
+
         sig_row = session.query(Settings).filter(Settings.key == "email_signature").first()
         logo_row = session.query(Settings).filter(Settings.key == "signature_logo").first()
         mime_row = session.query(Settings).filter(Settings.key == "signature_logo_mime").first()
@@ -148,15 +150,18 @@ def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl
 
         leads = session.query(Lead).filter(Lead.id.in_(lead_ids)).all()
         lead_map = {l.id: l for l in leads}
-        job["total"] = len(lead_ids)
+        job.total = len(lead_ids)
+        session.commit()
 
         for i, lid in enumerate(lead_ids):
-            if job.get("cancelled"):
+            session.refresh(job)
+            if job.cancelled:
                 break
             lead = lead_map.get(lid)
             if not lead or not lead.email:
-                job["errors"] += 1
-                job["completed"] += 1
+                job.errors += 1
+                job.completed += 1
+                session.commit()
                 continue
 
             body = body_tpl
@@ -203,22 +208,29 @@ def _run_bulk_email(job_id: str, lead_ids: list[int], subject_tpl: str, body_tpl
 
                 session.flush()
                 if result.get("success"):
-                    job["sent"] += 1
+                    job.sent += 1
                 else:
-                    job["errors"] += 1
+                    job.errors += 1
             except Exception:
-                job["errors"] += 1
+                job.errors += 1
 
-            job["completed"] += 1
+            job.completed += 1
+            session.commit()
 
             if i < len(lead_ids) - 1 and delay_seconds > 0:
                 _time.sleep(delay_seconds)
 
+        session.refresh(job)
+        job.status = "done"
         session.commit()
-        job["status"] = "done"
-    except Exception as e:
-        job["status"] = "error"
-        job["error"] = str(e)
+    except Exception:
+        try:
+            err_job = session.query(BulkEmailJob).filter(BulkEmailJob.job_id == job_id).first()
+            if err_job:
+                err_job.status = "error"
+                session.commit()
+        except Exception:
+            pass
     finally:
         session.close()
 
@@ -284,43 +296,54 @@ def start_bulk_send(
     db: Session = Depends(get_db)
 ):
     job_id = str(uuid.uuid4())[:8]
-    _bulk_email_jobs[job_id] = {
-        "status": "running",
-        "total": len(payload.lead_ids),
-        "completed": 0,
-        "sent": 0,
-        "errors": 0,
-    }
-    
+    job = BulkEmailJob(
+        job_id=job_id,
+        status="running",
+        total=len(payload.lead_ids),
+        completed=0,
+        sent=0,
+        errors=0,
+    )
+    db.add(job)
+    db.commit()
+
     subject = payload.subject
     subject_variants = payload.subject_variants
     body = payload.body
-    
+
     if payload.template and payload.template in BULK_TEMPLATES:
         if not subject_variants and not subject:
             subject = BULK_TEMPLATES[payload.template]["subject"]
         body = BULK_TEMPLATES[payload.template]["body"]
-        
+
     background_tasks.add_task(
         _run_bulk_email, job_id, payload.lead_ids,
         subject, body, payload.delay_seconds, subject_variants
     )
     return {"job_id": job_id, "status": "started"}
 
+
 @router.get("/emails/bulk-send/{job_id}")
-def bulk_send_status(job_id: str):
-    job = _bulk_email_jobs.get(job_id)
+def bulk_send_status(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(BulkEmailJob).filter(BulkEmailJob.job_id == job_id).first()
     if not job:
         raise HTTPException(404, "Job not found")
-    return job
+    return {
+        "status": job.status,
+        "total": job.total,
+        "completed": job.completed,
+        "sent": job.sent,
+        "errors": job.errors,
+    }
 
 
 @router.post("/emails/bulk-send/{job_id}/cancel")
-def cancel_bulk_send(job_id: str):
-    job = _bulk_email_jobs.get(job_id)
+def cancel_bulk_send(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(BulkEmailJob).filter(BulkEmailJob.job_id == job_id).first()
     if not job:
         raise HTTPException(404, "Job not found")
-    job["cancelled"] = True
+    job.cancelled = True
+    db.commit()
     return {"cancelled": True}
 
 

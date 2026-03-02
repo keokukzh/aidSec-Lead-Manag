@@ -107,6 +107,13 @@ export default function DashboardPage() {
     queryFn: () => agentTasksApi.listTasks(5),
   });
 
+  // Fetch Sequence Worker Health (live status for Agent Workforce)
+  const { data: sequenceWorker } = useQuery({
+    queryKey: ["sequence-worker-health"],
+    queryFn: () => dashboardApi.getSequenceWorkerHealth(),
+    refetchInterval: 10000,
+  });
+
   const isLoading = isKpisLoading || isHealthLoading || isTasksLoading;
 
   if (isLoading) {
@@ -290,27 +297,45 @@ export default function DashboardPage() {
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="h-2 w-2 rounded-full bg-[#00d4aa] absolute -top-0.5 -right-0.5 animate-pulse" />
+                  <div className={cn(
+                    "h-2 w-2 rounded-full absolute -top-0.5 -right-0.5",
+                    sequenceWorker?.running ? "bg-[#00d4aa] animate-pulse" : "bg-[#6b7280]"
+                  )} />
                   <div className="rounded-lg bg-[#00d4aa15] p-2">
                     <Sparkles className="h-5 w-5 text-[#00d4aa]" />
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#e8eaed]">Enrichment Agent</p>
-                  <p className="text-[0.65rem] text-[#b8bec6] truncate font-mono">STATUS: SCANNING_ASSETS</p>
+                  <p className="text-sm font-medium text-[#e8eaed]">Sequence Worker</p>
+                  <p className="text-[0.65rem] text-[#b8bec6] truncate font-mono">
+                    {sequenceWorker?.enabled
+                      ? sequenceWorker?.running
+                        ? "STATUS: RUNNING"
+                        : sequenceWorker?.last_error
+                          ? `ERROR: ${sequenceWorker.last_error.slice(0, 30)}...`
+                          : "STATUS: IDLE"
+                      : "STATUS: DISABLED"}
+                  </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="h-2 w-2 rounded-full bg-[#3498db] absolute -top-0.5 -right-0.5" />
+                  <div className={cn(
+                    "h-2 w-2 rounded-full absolute -top-0.5 -right-0.5",
+                    (tasks?.length ?? 0) > 0 ? "bg-[#3498db] animate-pulse" : "bg-[#6b7280]"
+                  )} />
                   <div className="rounded-lg bg-[#3498db15] p-2">
                     <Send className="h-5 w-5 text-[#3498db]" />
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#e8eaed]">Outreach Agent</p>
-                  <p className="text-[0.65rem] text-[#b8bec6] truncate font-mono">STATUS: WAITING_FOR_APPROVAL</p>
+                  <p className="text-sm font-medium text-[#e8eaed]">Agent Queue</p>
+                  <p className="text-[0.65rem] text-[#b8bec6] truncate font-mono">
+                    {(tasks?.length ?? 0) > 0
+                      ? `STATUS: ${tasks?.some((t: Task) => t.status === "processing") ? "PROCESSING" : "PENDING"} (${tasks?.length} tasks)`
+                      : "STATUS: EMPTY"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -357,7 +382,7 @@ export default function DashboardPage() {
                   <p className="text-2xl font-mono font-bold text-[#f39c12]">{followups.today}</p>
                 </div>
               </div>
-              <Link href="/leads" className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#e74c3c22] py-2 text-[0.65rem] font-bold uppercase tracking-tight text-[#e8eaed] hover:bg-[#e74c3c44] transition-colors">
+              <Link href="/followups" className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#e74c3c22] py-2 text-[0.65rem] font-bold uppercase tracking-tight text-[#e8eaed] hover:bg-[#e74c3c44] transition-colors">
                 Resolve Now <Zap className="h-3 w-3" />
               </Link>
              </div>

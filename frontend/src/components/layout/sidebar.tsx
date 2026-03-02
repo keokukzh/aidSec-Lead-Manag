@@ -17,6 +17,7 @@ import {
   Inbox,
   BarChart2,
   Server,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/auth-store";
@@ -30,6 +31,7 @@ const navigation = [
   { name: "Pipeline", href: "/leads/pipeline", icon: Kanban },
   { name: "Kampagnen", href: "/kampagnen", icon: Target },
   { name: "AI Drafts", href: "/drafts", icon: Inbox },
+  { name: "Follow-ups", href: "/followups", icon: Clock },
   { name: "Conversion Health", href: "/analytics", icon: BarChart2 },
   {
     name: "Agent Queue",

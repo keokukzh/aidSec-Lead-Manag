@@ -104,6 +104,15 @@ export const authApi = {
 // Dashboard
 export const dashboardApi = {
   getKpis: () => request<DashboardKpisResponse>("/dashboard/kpis"),
+
+  getSequenceWorkerHealth: () =>
+    request<{
+      enabled: boolean;
+      running: boolean;
+      last_cycle_at?: string | null;
+      last_result?: { processed?: number; sent?: number; failed?: number } | null;
+      last_error?: string | null;
+    }>("/health/sequence-worker"),
 };
 
 // Leads
@@ -212,17 +221,28 @@ export const campaignsApi = {
 
 
 // Follow-ups
+export interface FollowUpItem {
+  id: number;
+  lead_id: number;
+  datum: string;
+  notiz: string;
+  erledigt: boolean;
+  created_at?: string;
+  lead_firma?: string | null;
+}
+
 export const followupsApi = {
-  list: (params?: { status?: string; lead_id?: string }) => {
+  list: (params?: { status?: string; lead_id?: string; due?: "overdue" | "today" | "upcoming" | "pending" }) => {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set("status", params.status);
     if (params?.lead_id) searchParams.set("lead_id", params.lead_id);
+    if (params?.due) searchParams.set("due", params.due);
     const query = searchParams.toString();
-    return request<unknown[]>(`/followups${query ? `?${query}` : ""}`);
+    return request<FollowUpItem[]>(`/followups${query ? `?${query}` : ""}`);
   },
 
   update: (id: string, data: unknown) =>
-    request<unknown>(`/followups/${id}`, { method: "PUT", body: data }),
+    request<unknown>(`/followups/${id}`, { method: "PATCH", body: data }),
 
   complete: (id: string) =>
     request<unknown>(`/followups/${id}/complete`, { method: "POST" }),

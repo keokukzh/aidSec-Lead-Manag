@@ -100,6 +100,27 @@ def update_followup(fu_id: int, payload: FollowUpUpdate, db: Session = Depends(g
     )
 
 
+@router.post("/followups/{fu_id}/complete", response_model=FollowUpOut)
+def complete_followup(fu_id: int, db: Session = Depends(get_db)):
+    """Mark a follow-up as completed (erledigt=true). Convenience endpoint for frontend."""
+    fu = db.query(FollowUp).filter(FollowUp.id == fu_id).first()
+    if not fu:
+        raise HTTPException(404, "Follow-up not found")
+    fu.erledigt = True
+    db.commit()
+    db.refresh(fu)
+    lead = db.query(Lead).filter(Lead.id == fu.lead_id).first()
+    return FollowUpOut(
+        id=fu.id,
+        lead_id=fu.lead_id,
+        datum=fu.datum,
+        notiz=fu.notiz or "",
+        erledigt=fu.erledigt,
+        created_at=fu.created_at,
+        lead_firma=lead.firma if lead else None,
+    )
+
+
 @router.delete("/followups/{fu_id}", status_code=204)
 def delete_followup(fu_id: int, db: Session = Depends(get_db)):
     fu = db.query(FollowUp).filter(FollowUp.id == fu_id).first()

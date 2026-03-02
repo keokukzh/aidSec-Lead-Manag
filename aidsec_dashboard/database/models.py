@@ -377,6 +377,26 @@ class Settings(Base):
     def __repr__(self):
         return f"<Settings(key='{self.key}')>"
 
+class BulkEmailJob(Base):
+    """Persistent state for bulk email send jobs (survives server restart)."""
+    __tablename__ = "bulk_email_jobs"
+    __table_args__ = (Index("ix_bulk_email_jobs_job_id", "job_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(32), unique=True, nullable=False)
+    status = Column(String(20), default="running")  # running, done, failed, cancelled
+    total = Column(Integer, default=0)
+    completed = Column(Integer, default=0)
+    sent = Column(Integer, default=0)
+    errors = Column(Integer, default=0)
+    cancelled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<BulkEmailJob(job_id='{self.job_id}', status='{self.status}')>"
+
+
 class AgentTask(Base):
     __tablename__ = "agent_tasks"
     __table_args__ = (

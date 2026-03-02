@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SendEmailRequest(BaseModel):
@@ -169,7 +169,7 @@ class ABTestStats(BaseModel):
 
 # Sequence Schemas
 class SequenceStep(BaseModel):
-    day_offset: int  # Days from start or previous step
+    day_offset: int = Field(ge=0, description="Days from start or previous step (must be >= 0)")
     template_id: Optional[int] = None
     subject_override: Optional[str] = None
     body_override: Optional[str] = None
