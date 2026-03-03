@@ -1,4 +1,4 @@
-"""Endpoints for external OpenClaw agents to pull tasks and report completions."""
+"""Endpoints for external agents to pull tasks and report completions."""
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -17,7 +17,7 @@ from api.schemas.agent_task import (
 )
 from database.models import AgentTask, EmailHistory, EmailStatus
 
-router = APIRouter(tags=["agents", "openclaw"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(tags=["agents"], dependencies=[Depends(verify_api_key)])
 
 
 def _parse_agent_api_keys() -> dict[str, str]:

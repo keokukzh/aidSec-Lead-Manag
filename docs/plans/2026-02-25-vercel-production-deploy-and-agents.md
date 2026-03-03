@@ -1,4 +1,4 @@
-# Vercel Production Deploy + OpenClaw Agent Access
+# Vercel Production Deploy + Agent Access
 
 ## Ziel
 

@@ -254,7 +254,7 @@ def trigger_auto_followup(db: Session = Depends(get_db)):
 def process_due_campaigns(db: Session = Depends(get_db)):
     """
     Finds all active campaign leads that are due, and queues them as an 'AgentTask'
-    for the external OpenClaw Agent 2 (SDR) to pull and process asynchronously over Tailscale.
+    for the external SDR agent to pull and process asynchronously over Tailscale.
     """
     now = datetime.utcnow()
     due_leads = (

@@ -23,7 +23,7 @@ class ScraperService:
     def scrape_company_info(self, url: str) -> Dict[str, Optional[str]]:
         """
         Scrape a company's website for 'About Us', 'Mission Statement', and generic metadata.
-        If AGENT1_URL is configured, routes the heavy scraping task to the external OpenClaw Agent.
+        If AGENT1_URL is configured, routes the heavy scraping task to the external agent.
         """
         url = url.strip()
         if not url.startswith(("http://", "https://")):
@@ -34,7 +34,7 @@ class ScraperService:
 
         if agent1_url:
             try:
-                # Route to external OpenClaw agent
+                # Route to external agent
                 logger.info(f"Routing scrape request for {url} to Agent 1 ({agent1_url})")
                 resp = self.session.post(
                     f"{agent1_url}/api/v1/tools/scrape",

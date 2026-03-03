@@ -1,4 +1,4 @@
-"""OpenClaw remote agent runner for pulling and completing queue tasks.
+"""Remote agent runner for pulling and completing queue tasks.
 
 Usage (example):
     python scripts/agent_runner.py --agent-id agent1
@@ -218,7 +218,7 @@ class AgentRunner:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="OpenClaw queue agent runner")
+    parser = argparse.ArgumentParser(description="Agent queue runner")
     parser.add_argument("--api-base-url", default=os.getenv("AIDSEC_API_BASE_URL", "http://100.100.97.120:8000/api"))
     parser.add_argument("--global-api-key", default=os.getenv("AIDSEC_GLOBAL_API_KEY", ""))
     parser.add_argument("--agent-id", default=os.getenv("AIDSEC_AGENT_ID", ""))

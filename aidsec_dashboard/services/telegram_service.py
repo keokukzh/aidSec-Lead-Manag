@@ -1,4 +1,4 @@
-"""Telegram command ingestion for OpenClaw task operations."""
+"""Telegram command ingestion for agent task operations."""
 from __future__ import annotations
 
 import os

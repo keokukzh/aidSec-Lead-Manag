@@ -35,7 +35,7 @@ export default function AgentTasksPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#e8eaed]">OpenClaw Queue</h1>
+          <h1 className="text-2xl font-bold text-[#e8eaed]">Agent Queue</h1>
           <p className="text-[#b8bec6]">Operations-first queue view for active work and execution history</p>
         </div>
         <div className="flex items-center gap-2 rounded-md bg-[#2a3040] px-4 py-2 text-sm font-medium text-[#e8eaed]">
@@ -142,7 +142,7 @@ export default function AgentTasksPage() {
                         </span>
                       </div>
                       {task.error_message && (
-                        <div className="mt-1 text-xs text-[#e74c3c] break-all max-w-[200px] truncate" title={task.error_message}>
+                        <div className="mt-1 text-xs text-[#e74c3c] break-all max-w-50 truncate" title={task.error_message}>
                           {task.error_message}
                         </div>
                       )}

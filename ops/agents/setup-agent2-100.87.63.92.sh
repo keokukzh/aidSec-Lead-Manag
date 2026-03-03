@@ -41,7 +41,7 @@ chmod 600 .env.agent
 
 cat > /etc/systemd/system/aidsec-agent-${AGENT_ID}.service <<EOF
 [Unit]
-Description=AidSec OpenClaw Agent Runner (${AGENT_ID})
+Description=AidSec Agent Runner (${AGENT_ID})
 After=network-online.target
 Wants=network-online.target
 

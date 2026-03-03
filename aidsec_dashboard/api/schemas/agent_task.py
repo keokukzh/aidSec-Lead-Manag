@@ -1,4 +1,4 @@
-"""Schemas for OpenClaw agent task queue operations."""
+"""Schemas for agent task queue operations."""
 from __future__ import annotations
 
 from datetime import datetime
