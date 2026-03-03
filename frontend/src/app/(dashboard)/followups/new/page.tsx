@@ -6,7 +6,7 @@ import { followupsApi, leadsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { ArrowLeft, Loader2, Calendar } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export default function NewFollowUpPage() {
   const searchParams = useSearchParams();
@@ -104,6 +104,7 @@ export default function NewFollowUpPage() {
               value={datum}
               onChange={(e) => setDatum(e.target.value)}
               required
+              title="Datum und Uhrzeit für das Follow-up"
               className="w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
             />
           </div>

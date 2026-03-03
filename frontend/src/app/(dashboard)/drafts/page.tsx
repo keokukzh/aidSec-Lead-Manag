@@ -192,7 +192,7 @@ export default function DraftsPage() {
       {/* Filters */}
       {!isLoading && (
         <div className="flex flex-wrap gap-4 rounded-lg border border-border/50 bg-card p-4">
-          <div className="relative flex-1 min-w-[180px]">
+          <div className="relative flex-1 min-w-45">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
@@ -304,7 +304,7 @@ export default function DraftsPage() {
                               </span>
                             )}
                             {draft.campaign_name && (
-                              <span className="text-xs px-2 py-0.5 rounded bg-muted/50 text-muted-foreground truncate max-w-[120px]">
+                              <span className="text-xs px-2 py-0.5 rounded bg-muted/50 text-muted-foreground truncate max-w-30">
                                 {draft.campaign_name}
                               </span>
                             )}

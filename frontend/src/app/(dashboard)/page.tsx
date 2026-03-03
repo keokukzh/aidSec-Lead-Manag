@@ -432,7 +432,7 @@ export default function DashboardPage() {
                     <div className="h-1.5 w-full bg-[#0e1117] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-linear-to-r from-[#00d4aa33] to-[#00d4aa] rounded-full transition-all"
-                        style={{ width: `${Math.min(camp.reply_rate_pct || 0, 100)}%` }}
+                        style={{ width: `${Math.min(camp.reply_rate_pct || 0, 100)}%` } as React.CSSProperties}
                       />
                     </div>
                     {camp.won > 0 && (
