@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from api.dependencies import get_db, verify_api_key
 from api.schemas.email import (
@@ -613,16 +614,21 @@ def update_draft(draft_id: int, payload: DraftUpdateRequest, db: Session = Depen
 @router.delete("/emails/drafts/{draft_id}", status_code=204)
 def delete_draft(draft_id: int, db: Session = Depends(get_db)):
     """Delete a draft by id."""
-    draft = (
+    deleted = (
         db.query(EmailHistory)
         .filter(EmailHistory.id == draft_id, EmailHistory.status == EmailStatus.DRAFT)
-        .first()
+        .delete(synchronize_session=False)
     )
-    if not draft:
+    if deleted == 0:
         raise HTTPException(404, "Draft not found")
 
-    db.delete(draft)
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(500, f"Draft delete failed: {str(exc)}")
+
+    return Response(status_code=204)
 
 @router.post("/emails/drafts/bulk-approve")
 def bulk_approve_drafts(payload: BulkDraftApproveRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
