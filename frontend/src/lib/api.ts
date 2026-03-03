@@ -961,6 +961,50 @@ export const importExportApi = {
 };
 
 // Marketing
+function resolveMarketingCategory(raw?: string): "anwalt" | "praxis" | "wordpress" | "allgemein" {
+  const value = (raw || "").toLowerCase();
+  if (value.includes("anw")) return "anwalt";
+  if (value.includes("prax") || value.includes("arzt") || value.includes("medizin")) return "praxis";
+  if (value.includes("word") || value.includes("wp")) return "wordpress";
+  return "allgemein";
+}
+
+function buildMarketingIdeaFallback(category?: string, intent?: string) {
+  const normalized = resolveMarketingCategory(category);
+  const categoryLabel: Record<typeof normalized, string> = {
+    anwalt: "Anwaltskanzleien",
+    praxis: "Arzt- und Zahnarztpraxen",
+    wordpress: "WordPress-Unternehmen",
+    allgemein: "Schweizer KMU",
+  };
+
+  const hook: Record<typeof normalized, string> = {
+    anwalt: "Mandatsgeheimnis und Reputationsrisiko",
+    praxis: "Patientenvertrauen und nDSG-Risiken",
+    wordpress: "Plugin-Schwachstellen und fehlendes Hardening",
+    allgemein: "sichtbare Website-Sicherheitslücken",
+  };
+
+  return {
+    success: true,
+    title: `Security Trust Sprint für ${categoryLabel[normalized]}`,
+    description:
+      `### Fokus\n` +
+      `Zielgruppe: ${categoryLabel[normalized]}\\n` +
+      `Kernproblem: ${hook[normalized]}\\n\\n` +
+      `### 7-Tage Umsetzung\\n` +
+      `- Tag 1: Kernbotschaft auf eine konkrete Risikoaussage zuspitzen.\\n` +
+      `- Tag 2-3: Landingpage + LinkedIn-Post mit Vorher/Nachher-Beispiel (F → A) erstellen.\\n` +
+      `- Tag 4-5: 30 Kontakte in Sequenz ansprechen und Antworten qualifizieren.\\n` +
+      `- Tag 6-7: Einwände clustern und Copy iterativ nachschärfen.\\n\\n` +
+      `### KPI\\n` +
+      `- Antwortquote Erstkontakt\\n` +
+      `- Anzahl qualifizierter Erstgespräche\\n` +
+      `- Conversion Audit → Angebot\\n\\n` +
+      (intent ? `### Intent\\n${intent}` : ""),
+  };
+}
+
 export const marketingApi = {
   deleteTracker: (trackerId: number) =>
     request<void>(`/marketing/tracker/${trackerId}`, { method: "DELETE" }),
@@ -969,6 +1013,14 @@ export const marketingApi = {
     request<{ success: boolean; title: string; description: string; error?: string }>("/marketing/generate", {
       method: "POST",
       body: { category, intent }
+    }).catch((error) => {
+      if (
+        error instanceof ApiError &&
+        (error.status >= 500 || /LM Studio|connection|refused|unreachable/i.test(error.message))
+      ) {
+        return buildMarketingIdeaFallback(category, intent);
+      }
+      throw error;
     }),
 
   createTracker: (data: { custom_title: string; custom_description: string }) =>
