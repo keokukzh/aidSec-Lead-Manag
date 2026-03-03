@@ -210,13 +210,22 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
     )
 
     # Queue-age proxy: age of leads that currently have pending drafts.
-    avg_draft_queue_age_hours = (
-        db.query(func.avg((func.julianday(func.current_timestamp()) - func.julianday(Lead.updated_at)) * 24))
+    # Keep this DB-agnostic (works on SQLite and PostgreSQL).
+    now_utc = datetime.utcnow()
+    draft_lead_updated_rows = (
+        db.query(Lead.updated_at)
         .join(EmailHistory, EmailHistory.lead_id == Lead.id)
-        .filter(EmailHistory.status == EmailStatus.DRAFT)
-        .scalar()
-        or 0
+        .filter(EmailHistory.status == EmailStatus.DRAFT, Lead.updated_at.isnot(None))
+        .all()
     )
+    if draft_lead_updated_rows:
+        avg_draft_queue_age_hours = sum(
+            max(0.0, (now_utc - updated_at).total_seconds() / 3600.0)
+            for (updated_at,) in draft_lead_updated_rows
+            if updated_at
+        ) / max(1, len(draft_lead_updated_rows))
+    else:
+        avg_draft_queue_age_hours = 0
 
     stale_cutoff = datetime.utcnow() - timedelta(days=7)
     stuck_leads_count = (
