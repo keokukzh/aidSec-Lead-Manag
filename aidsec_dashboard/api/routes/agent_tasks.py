@@ -281,16 +281,29 @@ def complete_agent_task(
         result = payload.result or {}
         subject = result.get("betreff", "Automatisch generiert")
         body = result.get("inhalt", "")
-        
-        # Save straight to EmailHistory as a Draft ready for human review in the Outgoing Queue
-        draft = EmailHistory(
-            lead_id=task.lead_id,
-            betreff=subject,
-            inhalt=body,
-            status=EmailStatus.DRAFT,
-            campaign_id=task.payload.get("campaign_id") if task.payload else None
-        )
-        db.add(draft)
+        campaign_id = task.payload.get("campaign_id") if task.payload else None
+
+        existing_draft = db.query(EmailHistory).filter(
+            EmailHistory.lead_id == task.lead_id,
+            EmailHistory.status == EmailStatus.DRAFT,
+        ).first()
+
+        if existing_draft:
+            task.result_payload = {
+                **(task.result_payload or {}),
+                "dedupe_skipped": True,
+                "existing_draft_id": existing_draft.id,
+            }
+        else:
+            # Save straight to EmailHistory as a Draft ready for human review in the Outgoing Queue
+            draft = EmailHistory(
+                lead_id=task.lead_id,
+                betreff=subject,
+                inhalt=body,
+                status=EmailStatus.DRAFT,
+                campaign_id=campaign_id,
+            )
+            db.add(draft)
         
     # Close task
     task.status = "completed"

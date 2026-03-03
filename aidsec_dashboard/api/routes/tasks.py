@@ -1,12 +1,34 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 from api.dependencies import get_db, verify_api_key
 from database.models import AgentTask, Lead
 
 router = APIRouter(tags=["tasks"], dependencies=[Depends(verify_api_key)])
+
+ACTIVE_STATUSES = {"pending", "processing"}
+DEFAULT_HISTORY_STATUSES = {"completed", "failed", "dead_letter"}
+
+
+def _serialize_task(task_obj: AgentTask, firma: str | None) -> Dict[str, Any]:
+    return {
+        "id": task_obj.id,
+        "task_type": task_obj.task_type,
+        "lead_id": task_obj.lead_id,
+        "lead_firma": firma,
+        "status": task_obj.status,
+        "assigned_to": task_obj.assigned_to,
+        "attempts": task_obj.attempts,
+        "max_attempts": task_obj.max_attempts,
+        "lease_until": task_obj.lease_until.isoformat() if task_obj.lease_until else None,
+        "last_heartbeat_at": task_obj.last_heartbeat_at.isoformat() if task_obj.last_heartbeat_at else None,
+        "next_retry_at": task_obj.next_retry_at.isoformat() if task_obj.next_retry_at else None,
+        "created_at": task_obj.created_at.isoformat() if task_obj.created_at else None,
+        "completed_at": task_obj.completed_at.isoformat() if task_obj.completed_at else None,
+        "error_message": task_obj.error_message,
+    }
 
 @router.get("/tasks")
 def list_tasks(limit: int = 50, db: Session = Depends(get_db)):
@@ -19,23 +41,42 @@ def list_tasks(limit: int = 50, db: Session = Depends(get_db)):
         .all()
     )
     
-    result = []
-    for task_obj, firma in tasks:
-        result.append({
-            "id": task_obj.id,
-            "task_type": task_obj.task_type,
-            "lead_id": task_obj.lead_id,
-            "lead_firma": firma,
-            "status": task_obj.status,
-            "assigned_to": task_obj.assigned_to,
-            "attempts": task_obj.attempts,
-            "max_attempts": task_obj.max_attempts,
-            "lease_until": task_obj.lease_until.isoformat() if task_obj.lease_until else None,
-            "last_heartbeat_at": task_obj.last_heartbeat_at.isoformat() if task_obj.last_heartbeat_at else None,
-            "next_retry_at": task_obj.next_retry_at.isoformat() if task_obj.next_retry_at else None,
-            "created_at": task_obj.created_at.isoformat() if task_obj.created_at else None,
-            "completed_at": task_obj.completed_at.isoformat() if task_obj.completed_at else None,
-            "error_message": task_obj.error_message
-        })
-        
-    return result
+    return [_serialize_task(task_obj, firma) for task_obj, firma in tasks]
+
+
+@router.get("/tasks/active")
+def list_active_tasks(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
+    """Fetch active queue tasks (pending + processing)."""
+    tasks = (
+        db.query(AgentTask, Lead.firma)
+        .outerjoin(Lead, AgentTask.lead_id == Lead.id)
+        .filter(AgentTask.status.in_(ACTIVE_STATUSES))
+        .order_by(desc(AgentTask.created_at))
+        .limit(limit)
+        .all()
+    )
+    return [_serialize_task(task_obj, firma) for task_obj, firma in tasks]
+
+
+@router.get("/tasks/history")
+def list_task_history(
+    limit: int = Query(100, ge=1, le=500),
+    statuses: str | None = Query(None, description="Comma-separated status filter"),
+    db: Session = Depends(get_db),
+):
+    """Fetch non-active queue history (completed/failed/dead_letter by default)."""
+    status_set = DEFAULT_HISTORY_STATUSES
+    if statuses:
+        requested = {s.strip() for s in statuses.split(",") if s.strip()}
+        if requested:
+            status_set = requested
+
+    tasks = (
+        db.query(AgentTask, Lead.firma)
+        .outerjoin(Lead, AgentTask.lead_id == Lead.id)
+        .filter(AgentTask.status.in_(status_set))
+        .order_by(desc(AgentTask.created_at))
+        .limit(limit)
+        .all()
+    )
+    return [_serialize_task(task_obj, firma) for task_obj, firma in tasks]

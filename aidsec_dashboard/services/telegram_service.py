@@ -8,7 +8,7 @@ from typing import Any
 import requests
 from sqlalchemy.orm import Session
 
-from database.models import AgentTask, Settings
+from database.models import AgentTask, EmailHistory, EmailStatus, Settings
 
 
 @dataclass
@@ -160,6 +160,21 @@ def _handle_task_create(ctx: TelegramContext, db: Session, parts: list[str]) -> 
     }
     if agent_hint:
         payload["agent_hint"] = agent_hint
+
+        existing_task = db.query(AgentTask).filter(
+            AgentTask.lead_id == lead_id,
+            AgentTask.task_type == "GENERATE_DRAFT",
+            AgentTask.status.in_(["pending", "processing"]),
+        ).first()
+        if existing_task:
+            return f"Skipped: open task #{existing_task.id} already exists for lead {lead_id}"
+
+        existing_draft = db.query(EmailHistory).filter(
+            EmailHistory.lead_id == lead_id,
+            EmailHistory.status == EmailStatus.DRAFT,
+        ).first()
+        if existing_draft:
+            return f"Skipped: open draft #{existing_draft.id} already exists for lead {lead_id}"
 
     task = AgentTask(
         task_type="GENERATE_DRAFT",

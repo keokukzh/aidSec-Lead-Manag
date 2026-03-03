@@ -24,6 +24,7 @@ from database.models import (
     LeadStatus,
     LeadSequenceAssignment,
     AgentTask,
+    EmailHistory,
     EmailStatus,
     StatusHistory,
 )
@@ -35,6 +36,22 @@ DEFAULT_SEQUENZ = [
     {"typ": "nachfassen", "delay_tage": 3, "template_id": None},
     {"typ": "angebot", "delay_tage": 7, "template_id": None},
 ]
+
+
+def _has_open_draft_task_or_email(db: Session, lead_id: int) -> bool:
+    open_task = db.query(AgentTask).filter(
+        AgentTask.lead_id == lead_id,
+        AgentTask.task_type == "GENERATE_DRAFT",
+        AgentTask.status.in_(["pending", "processing"]),
+    ).first()
+    if open_task:
+        return True
+
+    open_draft = db.query(EmailHistory).filter(
+        EmailHistory.lead_id == lead_id,
+        EmailHistory.status == EmailStatus.DRAFT,
+    ).first()
+    return open_draft is not None
 
 
 def _campaign_to_out(c: Campaign) -> CampaignOut:
@@ -215,25 +232,23 @@ def trigger_auto_followup(db: Session = Depends(get_db)):
     ).all()
     
     queued = 0
+    skipped_deduped = 0
     for lead in leads:
-        existing = db.query(AgentTask).filter(
-            AgentTask.lead_id == lead.id,
-            AgentTask.task_type == "GENERATE_DRAFT",
-            AgentTask.status.in_(["pending", "processing"]),
-        ).first()
-        
-        if not existing:
-            task = AgentTask(
-                task_type="GENERATE_DRAFT",
-                lead_id=lead.id,
-                status="pending",
-                payload={"reason": "Auto-Follow-up 7 Days", "auto": True, "email_type": "followup"},
-            )
-            db.add(task)
-            queued += 1
+        if _has_open_draft_task_or_email(db, lead.id):
+            skipped_deduped += 1
+            continue
+
+        task = AgentTask(
+            task_type="GENERATE_DRAFT",
+            lead_id=lead.id,
+            status="pending",
+            payload={"reason": "Auto-Follow-up 7 Days", "auto": True, "email_type": "followup"},
+        )
+        db.add(task)
+        queued += 1
             
     db.commit()
-    return {"success": True, "queued_followups": queued}
+    return {"success": True, "queued_followups": queued, "skipped_deduped": skipped_deduped}
 
 @router.post("/campaigns/process-due")
 def process_due_campaigns(db: Session = Depends(get_db)):
@@ -254,6 +269,7 @@ def process_due_campaigns(db: Session = Depends(get_db)):
     )
 
     tasks_queued = 0
+    skipped_deduped = 0
 
     for cl in due_leads:
         seq = cl.campaign.sequenz or DEFAULT_SEQUENZ
@@ -276,6 +292,10 @@ def process_due_campaigns(db: Session = Depends(get_db)):
             cl.cl_status = "pausiert"
             continue
             
+        if _has_open_draft_task_or_email(db, lead.id):
+            skipped_deduped += 1
+            continue
+
         # Queue the task for Agent 2 instead of executing LLM directly
         agent_task = AgentTask(
             task_type="GENERATE_DRAFT",
@@ -298,4 +318,4 @@ def process_due_campaigns(db: Session = Depends(get_db)):
             cl.cl_status = "abgeschlossen"
 
     db.commit()
-    return {"processed": len(due_leads), "tasks_queued": tasks_queued}
+    return {"processed": len(due_leads), "tasks_queued": tasks_queued, "skipped_deduped": skipped_deduped}

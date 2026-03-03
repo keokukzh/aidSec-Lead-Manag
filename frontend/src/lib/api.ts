@@ -893,19 +893,38 @@ export const analyticsApi = {
 };
 
 // Agent Tasks
+export interface AgentTaskItem {
+  id: number;
+  task_type: string;
+  lead_id: number;
+  lead_firma: string | null;
+  status: string;
+  assigned_to: string | null;
+  attempts?: number | null;
+  max_attempts?: number | null;
+  lease_until?: string | null;
+  last_heartbeat_at?: string | null;
+  next_retry_at?: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
 export const agentTasksApi = {
   listTasks: (limit: number = 50) =>
-    request<Array<{
-      id: number;
-      task_type: string;
-      lead_id: number;
-      lead_firma: string | null;
-      status: string;
-      assigned_to: string | null;
-      created_at: string | null;
-      completed_at: string | null;
-      error_message: string | null;
-    }>>(`/tasks?limit=${limit}`),
+    request<AgentTaskItem[]>(`/tasks?limit=${limit}`),
+
+  listActiveTasks: (limit: number = 100) =>
+    request<AgentTaskItem[]>(`/tasks/active?limit=${limit}`),
+
+  listTaskHistory: (limit: number = 100, statuses?: string[]) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (statuses && statuses.length > 0) {
+      params.set("statuses", statuses.join(","));
+    }
+    return request<AgentTaskItem[]>(`/tasks/history?${params.toString()}`);
+  },
 };
 
 // Import/Export
