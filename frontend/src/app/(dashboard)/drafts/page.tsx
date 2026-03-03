@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { emailsApi, campaignsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/context/ToastContext";
 import {
   Loader2,
   CheckCircle2,
@@ -37,6 +38,7 @@ const kategorieOptions = [
 
 export default function DraftsPage() {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editSubject, setEditSubject] = useState("");
@@ -79,9 +81,16 @@ export default function DraftsPage() {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: number[]) => emailsApi.bulkDeleteDrafts(ids),
-    onSuccess: () => {
+    onSuccess: (_data, ids) => {
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
       setSelectedIds([]);
+      showToast({
+        message: ids.length === 1 ? "Draft gelöscht" : `${ids.length} Drafts gelöscht`,
+        type: "success",
+      });
+    },
+    onError: (error: Error) => {
+      showToast({ message: `Löschen fehlgeschlagen: ${error.message}`, type: "error" });
     },
   });
 
