@@ -6,9 +6,7 @@ import { useState, useEffect } from "react";
 import { emailsApi, settingsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const SETTINGS_API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api")
-  .trim()
-  .replace(/\/+$/, "");
+const SETTINGS_API_BASE_URL = "/api/proxy";
 
 // Toast notification component
 function Toast({ message, type, onClose }: { message: string; type: "success" | "error"; onClose: () => void }) {

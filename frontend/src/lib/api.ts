@@ -1,6 +1,4 @@
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api")
-  .trim()
-  .replace(/\/+$/, "");
+const API_BASE_URL = "/api/proxy";
 
 interface RequestOptions {
   method?: string;

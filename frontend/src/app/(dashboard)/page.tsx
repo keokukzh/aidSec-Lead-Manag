@@ -151,7 +151,7 @@ export default function DashboardPage() {
               {isDeployed ? (
                 <>
                   <p className="font-medium text-[#b8bec6] mb-1">Online-Deployment: Backend-URL prüfen</p>
-                  <p className="mb-2">In Vercel/Deployment: <code className="text-[#00d4aa]">NEXT_PUBLIC_API_URL</code> auf deine Backend-URL setzen (z.B. https://dein-backend.railway.app/api)</p>
+                  <p className="mb-2">In Vercel/Deployment: <code className="text-[#00d4aa]">BACKEND_API_URL</code> auf deine Backend-URL setzen (z.B. https://dein-backend.railway.app/api)</p>
                 </>
               ) : (
                 <>
