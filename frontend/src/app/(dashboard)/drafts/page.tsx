@@ -13,6 +13,7 @@ import {
   CheckSquare,
   Square,
   Search,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -76,6 +77,14 @@ export default function DraftsPage() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => emailsApi.bulkDeleteDrafts(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drafts"] });
+      setSelectedIds([]);
+    },
+  });
+
   const toggleSelection = (id: number) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -111,6 +120,17 @@ export default function DraftsPage() {
     }
   };
 
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`${selectedIds.length} Draft(s) wirklich löschen?`)) return;
+    bulkDeleteMutation.mutate(selectedIds);
+  };
+
+  const handleSingleDelete = (id: number) => {
+    if (!confirm("Draft wirklich löschen?")) return;
+    bulkDeleteMutation.mutate([id]);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -139,6 +159,23 @@ export default function DraftsPage() {
               <Send className="w-5 h-5" />
             )}
             Approve & Send Selected ({selectedIds.length})
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            disabled={selectedIds.length === 0 || bulkDeleteMutation.isPending}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors",
+              selectedIds.length > 0 && !bulkDeleteMutation.isPending
+                ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                : "bg-muted text-muted-foreground cursor-not-allowed"
+            )}
+          >
+            {bulkDeleteMutation.isPending ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Trash2 className="w-5 h-5" />
+            )}
+            Delete Selected ({selectedIds.length})
           </button>
         </div>
       </div>
@@ -295,6 +332,16 @@ export default function DraftsPage() {
                               title="Approve & Send immediately"
                             >
                               <Send className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!isEditing && (
+                            <button
+                              onClick={() => handleSingleDelete(draft.id)}
+                              disabled={bulkDeleteMutation.isPending}
+                              className="p-2 rounded-md text-red-500 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                              title="Delete draft"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>

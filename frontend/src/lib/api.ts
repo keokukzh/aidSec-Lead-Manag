@@ -702,11 +702,19 @@ export const emailsApi = {
       body: data,
     }),
 
+  deleteDraft: (draftId: number) =>
+    request<void>(`/emails/drafts/${draftId}`, {
+      method: "DELETE",
+    }),
+
   bulkApproveDrafts: (draftIds: number[]) =>
     request<{ approved: number; failed: number }>("/emails/drafts/bulk-approve", {
       method: "POST",
       body: { draft_ids: draftIds },
     }),
+
+  bulkDeleteDrafts: (draftIds: number[]) =>
+    Promise.all(draftIds.map((id) => request<void>(`/emails/drafts/${id}`, { method: "DELETE" }))),
 
   getAbTestingStats: () =>
     request<Array<{ subject: string; sent: number; responded: number; response_rate: number }>>("/emails/ab-testing"),

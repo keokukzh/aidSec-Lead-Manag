@@ -609,6 +609,21 @@ def update_draft(draft_id: int, payload: DraftUpdateRequest, db: Session = Depen
     db.commit()
     return {"success": True}
 
+
+@router.delete("/emails/drafts/{draft_id}", status_code=204)
+def delete_draft(draft_id: int, db: Session = Depends(get_db)):
+    """Delete a draft by id."""
+    draft = (
+        db.query(EmailHistory)
+        .filter(EmailHistory.id == draft_id, EmailHistory.status == EmailStatus.DRAFT)
+        .first()
+    )
+    if not draft:
+        raise HTTPException(404, "Draft not found")
+
+    db.delete(draft)
+    db.commit()
+
 @router.post("/emails/drafts/bulk-approve")
 def bulk_approve_drafts(payload: BulkDraftApproveRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Approve multiple drafts and submit them to be sent in background."""
