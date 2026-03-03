@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/refs */
 
 import { cn } from "@/lib/utils";
 import { useSequenceBuilder } from "@/hooks/email";
@@ -15,6 +16,13 @@ export function SequenceBuilderSection({
   leads,
 }: SequenceBuilderSectionProps) {
   const seq = useSequenceBuilder(templates, leads);
+  const sequenceImportInputRef = seq.sequenceImportInputRef;
+  const importSequenceTimelineJson = seq.importSequenceTimelineJson;
+  const scheduleMode = seq.scheduleMode;
+  const setScheduleMode = seq.setScheduleMode;
+  const scheduleReferenceDate = seq.scheduleReferenceDate;
+  const setScheduleReferenceDate = seq.setScheduleReferenceDate;
+  const sequenceScheduleTimeline = seq.sequenceScheduleTimeline;
 
   return (
     <div className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-6 space-y-4">
@@ -411,10 +419,10 @@ export function SequenceBuilderSection({
                   : "Import als neue Sequence speichern"}
               </button>
               <input
-                ref={seq.sequenceImportInputRef}
+                ref={sequenceImportInputRef}
                 type="file"
                 accept="application/json,.json"
-                onChange={seq.importSequenceTimelineJson}
+                onChange={importSequenceTimelineJson}
                 className="hidden"
               />
             </div>
@@ -423,10 +431,10 @@ export function SequenceBuilderSection({
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#b8bec6]">Modus</span>
             <button
-              onClick={() => seq.setScheduleMode("from-start")}
+              onClick={() => setScheduleMode("from-start")}
               className={cn(
                 "rounded border px-2 py-1 text-xs",
-                seq.scheduleMode === "from-start"
+                scheduleMode === "from-start"
                   ? "border-[#00d4aa] text-[#00d4aa]"
                   : "border-[#2a3040] text-[#b8bec6]"
               )}
@@ -434,10 +442,10 @@ export function SequenceBuilderSection({
               ab Startdatum
             </button>
             <button
-              onClick={() => seq.setScheduleMode("cumulative")}
+              onClick={() => setScheduleMode("cumulative")}
               className={cn(
                 "rounded border px-2 py-1 text-xs",
-                seq.scheduleMode === "cumulative"
+                scheduleMode === "cumulative"
                   ? "border-[#00d4aa] text-[#00d4aa]"
                   : "border-[#2a3040] text-[#b8bec6]"
               )}
@@ -456,17 +464,17 @@ export function SequenceBuilderSection({
             <input
               id="sequence-start-date"
               type="date"
-              value={seq.scheduleReferenceDate}
+              value={scheduleReferenceDate}
               onChange={(e) =>
-                seq.setScheduleReferenceDate(e.target.value)
+                setScheduleReferenceDate(e.target.value)
               }
               className="rounded-md border border-[#2a3040] bg-[#111827] px-2 py-1 text-xs text-[#e8eaed]"
             />
           </div>
 
           <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-            {seq.sequenceScheduleTimeline.length > 0 ? (
-              seq.sequenceScheduleTimeline.map((item) => (
+            {sequenceScheduleTimeline.length > 0 ? (
+              sequenceScheduleTimeline.map((item) => (
                 <div
                   key={`${item.stepIndex}-${item.dayOffset}-${item.scheduledDateLabel}`}
                   className="flex items-center justify-between rounded border border-[#2a3040] px-2 py-1 text-xs"

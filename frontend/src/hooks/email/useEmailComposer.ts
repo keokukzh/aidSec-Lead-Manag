@@ -18,8 +18,7 @@ const PERSONALIZATION_TAGS = [
 ];
 
 export function useEmailComposer(
-  leads: LeadListItem[],
-  templates: EmailTemplateItem[]
+  leads: LeadListItem[]
 ) {
   const [composerLeadId, setComposerLeadId] = useState<string>("");
   const [composerTemplateId, setComposerTemplateId] = useState<string>("");

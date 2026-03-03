@@ -32,7 +32,7 @@ export function EmailComposerSection({ leads, templates }: EmailComposerSectionP
     personalizationTags,
     selectTemplate,
     insertTag,
-  } = useEmailComposer(leads, templates);
+  } = useEmailComposer(leads);
 
   return (
     <div className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-6 space-y-4">
