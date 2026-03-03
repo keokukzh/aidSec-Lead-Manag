@@ -39,3 +39,10 @@ Thumbs.db
 .antigravity/
 .vercel
 .env*.local
+
+# Cursor plans
+.cursor/plans/
+
+# Test artifacts
+test_dashboard_hang.py
+test_dashboard_state.png

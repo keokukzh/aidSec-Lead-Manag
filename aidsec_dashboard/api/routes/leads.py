@@ -84,7 +84,6 @@ def list_leads(request: Request,
     stadt: Optional[str] = None,
     quelle: Optional[str] = None,
     ranking: Optional[str] = None,
-    replied: Optional[bool] = Query(None, description="Filter: true = has last_reply_at"),
     sort: str = Query("newest", enum=list(SORT_MAP.keys())),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
@@ -109,10 +108,6 @@ def list_leads(request: Request,
             q = q.filter(Lead.ranking_grade.is_(None))
         else:
             q = q.filter(Lead.ranking_grade == ranking)
-    if replied is True:
-        q = q.filter(Lead.last_reply_at.isnot(None))
-    elif replied is False:
-        q = q.filter(Lead.last_reply_at.is_(None))
     if search:
         term = f"%{search}%"
         q = q.filter(

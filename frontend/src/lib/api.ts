@@ -54,7 +54,7 @@ async function getToken(): Promise<string | null> {
   }
 }
 
-const REQUEST_TIMEOUT_MS = 15000; // 15s - prevents indefinite hang when backend is unreachable
+const REQUEST_TIMEOUT_MS = 30000; // 30s - prevents indefinite hang when backend is unreachable
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, headers = {} } = options;
@@ -141,7 +141,6 @@ export const leadsApi = {
     stadt?: string;
     quelle?: string;
     ranking?: string;
-    replied?: boolean;
     sort?: string;
     page?: number;
     limit?: number;
@@ -153,7 +152,6 @@ export const leadsApi = {
     if (params?.stadt) searchParams.set("stadt", params.stadt);
     if (params?.quelle) searchParams.set("quelle", params.quelle);
     if (params?.ranking) searchParams.set("ranking", params.ranking);
-    if (params?.replied !== undefined) searchParams.set("replied", String(params.replied));
     if (params?.sort) searchParams.set("sort", params.sort);
     if (params?.page) searchParams.set("page", String(params.page));
     if (params?.limit) searchParams.set("limit", String(params.limit));
