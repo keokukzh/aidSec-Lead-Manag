@@ -78,6 +78,17 @@ class FollowUpCounts(BaseModel):
     upcoming: int
 
 
+class ThroughputKPIs(BaseModel):
+    handled_leads_today: int
+    sent_today: int
+    failed_today: int
+    send_completion_rate: float
+    pending_draft_count: int
+    avg_draft_queue_age_hours: float
+    stuck_leads_count: int
+    due_followups_total: int
+
+
 class DashboardKPIs(BaseModel):
     status: StatusCounts
     kategorie: KategorieCounts
@@ -89,3 +100,4 @@ class DashboardKPIs(BaseModel):
     campaign: CampaignKPIs
     marketing: MarketingKPIs
     followups: FollowUpCounts
+    throughput: ThroughputKPIs

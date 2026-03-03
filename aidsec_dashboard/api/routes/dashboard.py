@@ -21,6 +21,7 @@ from api.schemas.dashboard import (
     CampaignKPIs,
     MarketingKPIs,
     FollowUpCounts,
+    ThroughputKPIs,
 )
 from database.models import (
     Lead,
@@ -34,6 +35,7 @@ from database.models import (
     CampaignStatus,
     CampaignLead,
     MarketingIdeaTracker,
+    AgentTask,
 )
 
 router = APIRouter(tags=["dashboard"], dependencies=[Depends(verify_api_key)])
@@ -168,6 +170,73 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
     today_fus = int(fu_agg[1] or 0)
     upcoming = int(fu_agg[2] or 0)
 
+    # --- Throughput KPIs (operations-first dashboard) ---
+    today_start = datetime.combine(date.today(), datetime.min.time())
+
+    handled_leads_today = (
+        db.query(func.count(func.distinct(StatusHistory.lead_id)))
+        .filter(StatusHistory.datum >= today_start)
+        .scalar()
+        or 0
+    )
+
+    sent_today = (
+        db.query(func.count(EmailHistory.id))
+        .filter(
+            EmailHistory.status == EmailStatus.SENT,
+            EmailHistory.gesendet_at.isnot(None),
+            EmailHistory.gesendet_at >= today_start,
+        )
+        .scalar()
+        or 0
+    )
+    failed_today = (
+        db.query(func.count(EmailHistory.id))
+        .filter(
+            EmailHistory.status == EmailStatus.FAILED,
+            EmailHistory.gesendet_at.isnot(None),
+            EmailHistory.gesendet_at >= today_start,
+        )
+        .scalar()
+        or 0
+    )
+    send_completion_rate = round((sent_today / max(1, sent_today + failed_today)) * 100, 1)
+
+    pending_draft_count = (
+        db.query(func.count(EmailHistory.id))
+        .filter(EmailHistory.status == EmailStatus.DRAFT)
+        .scalar()
+        or 0
+    )
+
+    # Queue-age proxy: age of leads that currently have pending drafts.
+    avg_draft_queue_age_hours = (
+        db.query(func.avg((func.julianday(func.current_timestamp()) - func.julianday(Lead.updated_at)) * 24))
+        .join(EmailHistory, EmailHistory.lead_id == Lead.id)
+        .filter(EmailHistory.status == EmailStatus.DRAFT)
+        .scalar()
+        or 0
+    )
+
+    stale_cutoff = datetime.utcnow() - timedelta(days=7)
+    stuck_leads_count = (
+        db.query(func.count(Lead.id))
+        .filter(
+            Lead.status.in_([
+                LeadStatus.OFFEN,
+                LeadStatus.PENDING,
+                LeadStatus.RESPONSE_RECEIVED,
+                LeadStatus.OFFER_SENT,
+                LeadStatus.NEGOTIATION,
+            ]),
+            Lead.updated_at <= stale_cutoff,
+        )
+        .scalar()
+        or 0
+    )
+
+    due_followups_total = overdue + today_fus
+
     return DashboardKPIs(
         status=StatusCounts(
             total=total, offen=offen, pending=pending,
@@ -198,6 +267,16 @@ def _compute_kpis(db: Session) -> DashboardKPIs:
         ),
         marketing=MarketingKPIs(total=m_total, planned=m_planned, active=m_active, completed=m_completed),
         followups=FollowUpCounts(overdue=overdue, today=today_fus, upcoming=upcoming),
+        throughput=ThroughputKPIs(
+            handled_leads_today=int(handled_leads_today),
+            sent_today=int(sent_today),
+            failed_today=int(failed_today),
+            send_completion_rate=send_completion_rate,
+            pending_draft_count=int(pending_draft_count),
+            avg_draft_queue_age_hours=round(float(avg_draft_queue_age_hours), 1),
+            stuck_leads_count=int(stuck_leads_count),
+            due_followups_total=int(due_followups_total),
+        ),
     )
 
 

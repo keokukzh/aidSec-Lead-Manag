@@ -5,7 +5,6 @@ import { dashboardApi, analyticsApi, agentTasksApi } from "@/lib/api";
 import {
   Users,
   Clock,
-  CheckCircle2,
   Briefcase,
   Stethoscope,
   Globe,
@@ -92,7 +91,7 @@ export default function DashboardPage() {
   const queryClient = useQueryClient();
 
   // Fetch overall KPIs
-  const { data: kpis, isLoading: isKpisLoading, isError: isKpisError, error: kpisError, refetch: refetchKpis } = useQuery({
+  const { data: kpis, isLoading: isKpisLoading, isError: isKpisError, error: kpisError } = useQuery({
     queryKey: ["dashboard-kpis"],
     queryFn: dashboardApi.getKpis,
     refetchInterval: 30000,
@@ -193,6 +192,16 @@ export default function DashboardPage() {
   const stats = kpis?.status || {};
   const kategorie = kpis?.kategorie || {};
   const followups = kpis?.followups || { overdue: 0, today: 0, upcoming: 0 };
+  const throughput = kpis?.throughput || {
+    handled_leads_today: 0,
+    sent_today: 0,
+    failed_today: 0,
+    send_completion_rate: 0,
+    pending_draft_count: 0,
+    avg_draft_queue_age_hours: 0,
+    stuck_leads_count: 0,
+    due_followups_total: 0,
+  };
   const metrics = health?.metrics;
 
   return (
@@ -240,51 +249,104 @@ export default function DashboardPage() {
           {/* Quick Metrics Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard 
-              label="Total Leads" 
-              value={stats.total || 0} 
-              icon={Users} 
-              trend="+12%" 
+              label="Handled Today" 
+              value={throughput.handled_leads_today || 0} 
+              icon={Activity} 
+              href="/leads?sort=stale_first"
               color="#3498db" 
             />
             <MetricCard 
-              label="Open Deals" 
-              value={stats.offen || 0} 
-              icon={Activity} 
+              label="Send Completion" 
+              value={`${throughput.send_completion_rate || 0}%`} 
+              icon={Send} 
+              href="/tasks"
               color="#00d4aa" 
             />
             <MetricCard 
-              label="Won Leads" 
-              value={stats.gewonnen || 0} 
-              icon={CheckCircle2} 
-              color="#2ecc71" 
+              label="Drafts Pending" 
+              value={throughput.pending_draft_count || 0} 
+              icon={Clock} 
+              href="/drafts"
+              color="#f1c40f" 
             />
             <MetricCard 
-              label="Total Outreach" 
-              value={metrics?.total_sent || 0} 
-              icon={Send} 
-              color="#9b59b6" 
+              label="Stuck Leads (7d+)" 
+              value={throughput.stuck_leads_count || 0} 
+              icon={Target} 
+              href="/leads?sort=stale_first"
+              color="#e67e22" 
             />
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
             <MetricCard 
-              label="Total Pipeline (CHF)" 
-              value={kpis?.revenue?.total_pipeline ? `CHF ${kpis?.revenue?.total_pipeline.toLocaleString()}` : "CHF 0"} 
-              icon={Activity} 
+              label="Approval Queue Age" 
+              value={`${throughput.avg_draft_queue_age_hours || 0} h`} 
+              icon={Clock} 
+              href="/drafts"
               color="#3498db" 
             />
             <MetricCard 
-              label="Won Revenue (CHF)" 
-              value={kpis?.revenue?.won_deals ? `CHF ${kpis?.revenue?.won_deals.toLocaleString()}` : "CHF 0"} 
-              icon={CheckCircle2} 
+              label="Due Follow-ups" 
+              value={throughput.due_followups_total || 0} 
+              icon={Users} 
+              href="/leads?sort=followup_due_first"
               color="#2ecc71" 
             />
             <MetricCard 
-              label="Avg Deal Size (CHF)" 
-              value={kpis?.revenue?.avg_deal_size ? `CHF ${kpis?.revenue?.avg_deal_size.toLocaleString()}` : "CHF 0"} 
-              icon={Target} 
+              label="Sent Today" 
+              value={throughput.sent_today || 0} 
+              icon={Send} 
+              href="/tasks"
               color="#f1c40f" 
             />
+          </div>
+
+          <div className="rounded-2xl border border-[#2a3040] bg-[#1a1f2e] p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-[#e8eaed] flex items-center gap-2">
+                <Zap className="h-4 w-4 text-[#00d4aa]" /> Throughput Operations
+              </h3>
+              <span className="text-[0.65rem] font-mono text-[#b8bec6]">DAILY EXECUTION</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="rounded-xl border border-[#2a3040] bg-[#0e1117]/60 p-3">
+                <p className="text-[0.6rem] uppercase tracking-wider text-[#b8bec6]">Sent Today</p>
+                <p className="mt-1 text-xl font-mono font-bold text-[#00d4aa]">{throughput.sent_today}</p>
+              </div>
+              <div className="rounded-xl border border-[#2a3040] bg-[#0e1117]/60 p-3">
+                <p className="text-[0.6rem] uppercase tracking-wider text-[#b8bec6]">Failed Today</p>
+                <p className="mt-1 text-xl font-mono font-bold text-[#e74c3c]">{throughput.failed_today}</p>
+              </div>
+              <div className="rounded-xl border border-[#2a3040] bg-[#0e1117]/60 p-3">
+                <p className="text-[0.6rem] uppercase tracking-wider text-[#b8bec6]">Open Leads</p>
+                <p className="mt-1 text-xl font-mono font-bold text-[#3498db]">{stats.offen || 0}</p>
+              </div>
+              <div className="rounded-xl border border-[#2a3040] bg-[#0e1117]/60 p-3">
+                <p className="text-[0.6rem] uppercase tracking-wider text-[#b8bec6]">Won Leads</p>
+                <p className="mt-1 text-xl font-mono font-bold text-[#2ecc71]">{stats.gewonnen || 0}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href="/leads?sort=stale_first"
+                className="rounded-md border border-[#2a3040] bg-[#0e1117]/60 px-3 py-1.5 text-xs text-[#b8bec6] hover:border-[#00d4aa] hover:text-[#e8eaed]"
+              >
+                Open stale queue
+              </Link>
+              <Link
+                href="/leads?sort=followup_due_first"
+                className="rounded-md border border-[#2a3040] bg-[#0e1117]/60 px-3 py-1.5 text-xs text-[#b8bec6] hover:border-[#00d4aa] hover:text-[#e8eaed]"
+              >
+                Follow-up priority queue
+              </Link>
+              <Link
+                href="/drafts"
+                className="rounded-md border border-[#2a3040] bg-[#0e1117]/60 px-3 py-1.5 text-xs text-[#b8bec6] hover:border-[#00d4aa] hover:text-[#e8eaed]"
+              >
+                Draft approval queue
+              </Link>
+            </div>
           </div>
 
           {/* Intelligence Pulse Section */}
@@ -498,12 +560,13 @@ interface MetricCardProps {
   icon: LucideIcon;
   trend?: string;
   color: string;
+  href?: string;
 }
 
-function MetricCard({ label, value, icon: Icon, trend, color }: MetricCardProps) {
+function MetricCard({ label, value, icon: Icon, trend, color, href }: MetricCardProps) {
   const palette = getPalette(color);
 
-  return (
+  const content = (
     <div className="group relative overflow-hidden rounded-2xl border border-[#2a3040] bg-[#1a1f2e] p-5 transition-all duration-300 hover:border-[#00d4aa33] hover:shadow-[0_0_20px_rgba(0,212,170,0.05)]">
       <div className="flex items-center justify-between mb-2">
         <div className="rounded-lg bg-[#0e1117] p-2">
@@ -527,6 +590,12 @@ function MetricCard({ label, value, icon: Icon, trend, color }: MetricCardProps)
       </div>
     </div>
   );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+
+  return content;
 }
 
 interface CategoryCardProps {

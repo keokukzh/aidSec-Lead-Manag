@@ -30,6 +30,7 @@ const navigation = [
   { name: "Leads", href: "/leads", icon: Users },
   { name: "Pipeline", href: "/leads/pipeline", icon: Kanban },
   { name: "Kampagnen", href: "/kampagnen", icon: Target },
+  { name: "Outreach Control", href: "/outreach-control", icon: Kanban },
   { name: "AI Drafts", href: "/drafts", icon: Inbox },
   { name: "Follow-ups", href: "/followups", icon: Clock },
   { name: "Conversion Health", href: "/analytics", icon: BarChart2 },

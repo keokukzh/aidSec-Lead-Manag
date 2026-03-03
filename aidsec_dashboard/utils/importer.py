@@ -167,10 +167,15 @@ def import_csv(file_path: str, kategorie: LeadKategorie = LeadKategorie.WORDPRES
     return leads, stats
 
 
-def import_direct(session, leads_data: List[Dict]) -> Tuple[int, int]:
-    """Direct import with session - returns (imported, duplicates)"""
+def import_direct(session, leads_data: List[Dict], return_created_ids: bool = False):
+    """Direct import with session.
+
+    Returns (imported, duplicates) by default.
+    If return_created_ids=True, returns (imported, duplicates, created_ids).
+    """
     imported = 0
     duplicates = 0
+    created_ids: List[int] = []
 
     # Pre-fetch all existing emails and websites for O(1) lookup
     existing_emails = {e for e, in session.query(Lead.email).filter(Lead.email.isnot(None)).all() if e}
@@ -203,7 +208,11 @@ def import_direct(session, leads_data: List[Dict]) -> Tuple[int, int]:
             quelle="excel_import"
         )
         session.add(lead)
+        session.flush()
+        created_ids.append(lead.id)
         imported += 1
 
     session.commit()
+    if return_created_ids:
+        return imported, duplicates, created_ids
     return imported, duplicates

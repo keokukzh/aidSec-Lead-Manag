@@ -215,6 +215,11 @@ class SequenceStats(BaseModel):
     completed: int
     paused: int
     unsubscribed: int
+    assignment_requested: int = 0
+    assignment_added: int = 0
+    skipped_conflicts: int = 0
+    skipped_existing: int = 0
+    skipped_missing_email: int = 0
 
 
 # Analytics Schemas

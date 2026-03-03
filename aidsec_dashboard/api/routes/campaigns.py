@@ -20,7 +20,9 @@ from database.models import (
     CampaignLead,
     CampaignStatus,
     Lead,
+    LeadKategorie,
     LeadStatus,
+    LeadSequenceAssignment,
     AgentTask,
     EmailStatus,
     StatusHistory,
@@ -151,12 +153,25 @@ def assign_leads(campaign_id: int, payload: AssignLeadsRequest, db: Session = De
 
     existing_ids = {cl.lead_id for cl in db.query(CampaignLead).filter(CampaignLead.campaign_id == campaign_id).all()}
     added = 0
+    skipped_conflicts = []
     for lid in payload.lead_ids:
+        active_sequence = db.query(LeadSequenceAssignment).filter(
+            LeadSequenceAssignment.lead_id == lid,
+            LeadSequenceAssignment.status == "aktiv",
+        ).first()
+        if active_sequence:
+            skipped_conflicts.append({
+                "lead_id": lid,
+                "reason": "Lead has active sequence assignment",
+                "sequence_id": active_sequence.sequence_id,
+            })
+            continue
+
         if lid not in existing_ids:
             db.add(CampaignLead(campaign_id=campaign_id, lead_id=lid, current_step=0, cl_status="aktiv"))
             added += 1
     db.commit()
-    return {"added": added}
+    return {"added": added, "skipped_conflicts": skipped_conflicts}
 
 
 @router.patch("/campaigns/{campaign_id}/leads/{cl_id}")

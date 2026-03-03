@@ -236,7 +236,7 @@ export function useSequenceBuilder(
         sequenceLeadIds,
         sequenceStartNow
       ),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({
         queryKey: ["email-sequence-stats", selectedSequenceId],
       });
@@ -244,7 +244,26 @@ export function useSequenceBuilder(
         queryKey: ["email-sequence-leads", selectedSequenceId],
       });
       setSequenceLeadIds([]);
-      showToast({ message: "Leads zur Sequence zugewiesen", type: "success" });
+      showToast({
+        message: `Leads zugewiesen: ${result.assignment_added}/${result.assignment_requested}`,
+        type: "success",
+      });
+
+      const skippedTotal =
+        (result.skipped_conflicts || 0) +
+        (result.skipped_existing || 0) +
+        (result.skipped_missing_email || 0);
+
+      if (skippedTotal > 0) {
+        showToast({
+          message:
+            `Übersprungen: ${skippedTotal} ` +
+            `(Konflikte: ${result.skipped_conflicts || 0}, ` +
+            `bereits aktiv: ${result.skipped_existing || 0}, ` +
+            `ohne E-Mail: ${result.skipped_missing_email || 0})`,
+          type: "error",
+        });
+      }
     },
     onError: (error: Error) => {
       showToast({

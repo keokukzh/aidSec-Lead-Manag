@@ -3,7 +3,8 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { leadsApi, LeadListItem } from "@/lib/api";
+import { useSearchParams } from "next/navigation";
+import { leadsApi, LeadListItem, emailsApi, followupsApi, agentTasksApi } from "@/lib/api";
 import { ResearchMissingButton } from "@/components/leads";
 import { cn } from "@/lib/utils";
 import {
@@ -13,6 +14,18 @@ import {
   AlertCircle,
   ChevronRight,
 } from "lucide-react";
+
+type LeadStatus =
+  | "offen"
+  | "pending"
+  | "response_received"
+  | "offer_sent"
+  | "negotiation"
+  | "gewonnen"
+  | "verloren";
+
+type PipelineBucket = { items: LeadListItem[]; total: number };
+type PipelineResponse = Record<LeadStatus, PipelineBucket>;
 
 const statusOptions = [
   { value: "", label: "Alle Status" },
@@ -38,6 +51,8 @@ const rankingOptions = [
 ];
 
 const sortOptions = [
+  { value: "stale_first", label: "Stale zuerst (Priorität)" },
+  { value: "followup_due_first", label: "Fällige Follow-ups zuerst" },
   { value: "newest", label: "Neueste zuerst" },
   { value: "oldest", label: "Älteste zuerst" },
   { value: "firma_asc", label: "Firma A-Z" },
@@ -71,12 +86,16 @@ function formatDate(dateStr: string | null | undefined) {
 
 export default function LeadsPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const initialStatus = searchParams.get("status") || "";
+  const initialRanking = searchParams.get("ranking") || "";
+  const initialSort = searchParams.get("sort") || "stale_first";
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(initialStatus);
   const [kategorie, setKategorie] = useState("");
   const [stadt, setStadt] = useState("");
-  const [ranking, setRanking] = useState("");
-  const [sort, setSort] = useState("newest");
+  const [ranking, setRanking] = useState(initialRanking);
+  const [sort, setSort] = useState(initialSort);
 
   // Bulk selection
   const [selectedLeads, setSelectedLeads] = useState<Set<number>>(new Set());
@@ -98,6 +117,47 @@ export default function LeadsPage() {
 
   const leads = useMemo(() => data?.leads || [], [data?.leads]);
   const total = data?.total || 0;
+
+  const { data: pipelineData } = useQuery({
+    queryKey: ["pipeline", "queue-overview"],
+    queryFn: () => leadsApi.getPipeline(1),
+  });
+
+  const { data: draftQueue } = useQuery({
+    queryKey: ["drafts", "queue-overview"],
+    queryFn: () => emailsApi.listDrafts(),
+  });
+
+  const { data: pendingFollowups } = useQuery({
+    queryKey: ["followups", "queue-overview", "pending"],
+    queryFn: () => followupsApi.list({ due: "pending" }),
+  });
+
+  const { data: recentTasks } = useQuery({
+    queryKey: ["tasks", "queue-overview"],
+    queryFn: () => agentTasksApi.listTasks(200),
+  });
+
+  const queues = useMemo(() => {
+    const p = (pipelineData || {}) as PipelineResponse;
+    const needsQualification = (p.offen?.total || 0) + (p.response_received?.total || 0);
+    const readyForOutreach =
+      (p.pending?.total || 0) +
+      (p.offer_sent?.total || 0) +
+      (p.negotiation?.total || 0);
+    const draftApproval = draftQueue?.length || 0;
+    const replyFollowup = pendingFollowups?.length || 0;
+    const blocked =
+      recentTasks?.filter((task) => task.status === "failed" || task.status === "error").length || 0;
+
+    return {
+      needsQualification,
+      readyForOutreach,
+      draftApproval,
+      replyFollowup,
+      blocked,
+    };
+  }, [pipelineData, draftQueue, pendingFollowups, recentTasks]);
 
   // Extract unique cities and sources for filters
   const uniqueCities = useMemo(() => {
@@ -193,6 +253,60 @@ export default function LeadsPage() {
             Neuer Lead
           </Link>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <button
+          onClick={() => {
+            setStatus("offen");
+            setRanking("none");
+          }}
+          className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-3 text-left hover:border-[#00d4aa]"
+        >
+          <p className="text-xs uppercase text-[#b8bec6]">Needs Qualification</p>
+          <p className="mt-1 text-2xl font-bold text-[#e8eaed]">{queues.needsQualification}</p>
+          <p className="mt-1 text-xs text-[#6b7280]">Offen + Antwort eingegangen</p>
+        </button>
+
+        <button
+          onClick={() => {
+            setStatus("pending");
+            setRanking("");
+          }}
+          className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-3 text-left hover:border-[#00d4aa]"
+        >
+          <p className="text-xs uppercase text-[#b8bec6]">Ready for Outreach</p>
+          <p className="mt-1 text-2xl font-bold text-[#e8eaed]">{queues.readyForOutreach}</p>
+          <p className="mt-1 text-xs text-[#6b7280]">Pending + Angebot + Verhandlung</p>
+        </button>
+
+        <Link
+          href="/drafts"
+          className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-3 hover:border-[#00d4aa]"
+        >
+          <p className="text-xs uppercase text-[#b8bec6]">Draft Approval</p>
+          <p className="mt-1 text-2xl font-bold text-[#e8eaed]">{queues.draftApproval}</p>
+          <p className="mt-1 text-xs text-[#6b7280]">Manuelle Freigabe erforderlich</p>
+        </Link>
+
+        <Link
+          href="/followups"
+          className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-3 hover:border-[#00d4aa]"
+        >
+          <p className="text-xs uppercase text-[#b8bec6]">Reply / Follow-up</p>
+          <p className="mt-1 text-2xl font-bold text-[#e8eaed]">{queues.replyFollowup}</p>
+          <p className="mt-1 text-xs text-[#6b7280]">Offene Follow-ups</p>
+        </Link>
+
+        <Link
+          href="/tasks"
+          className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-3 hover:border-[#00d4aa]"
+        >
+          <p className="text-xs uppercase text-[#b8bec6]">Blocked / Error</p>
+          <p className="mt-1 text-2xl font-bold text-[#e8eaed]">{queues.blocked}</p>
+          <p className="mt-1 text-xs text-[#6b7280]">Fehlgeschlagene Agent-Tasks</p>
+        </Link>
       </div>
 
       {/* Filters */}

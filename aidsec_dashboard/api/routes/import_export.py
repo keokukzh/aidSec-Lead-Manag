@@ -5,18 +5,23 @@ import io
 import tempfile
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_db, verify_api_key
 from database.models import Lead, LeadStatus, LeadKategorie
+from services.enrichment_service import enrich_lead
 
 router = APIRouter(tags=["import_export"], dependencies=[Depends(verify_api_key)])
 
 
 @router.post("/import/excel")
-def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def import_excel(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "File must be .xlsx or .xls")
 
@@ -26,7 +31,16 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
     from utils.importer import import_from_excel, import_direct
     leads_data, stats = import_from_excel(tmp_path)
-    imported, duplicates = import_direct(db, leads_data)
+    imported, duplicates, created_ids = import_direct(db, leads_data, return_created_ids=True)
+
+    if created_ids:
+        leads_with_website = (
+            db.query(Lead.id)
+            .filter(Lead.id.in_(created_ids), Lead.website.isnot(None), Lead.website != "")
+            .all()
+        )
+        for lead_id, in leads_with_website:
+            background_tasks.add_task(enrich_lead, lead_id)
 
     import os
     os.unlink(tmp_path)
@@ -41,6 +55,7 @@ def import_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 @router.post("/import/csv")
 def import_csv(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     kategorie: str = Query("wordpress"),
     db: Session = Depends(get_db),
@@ -54,7 +69,16 @@ def import_csv(
 
     from utils.importer import import_csv as _import_csv, import_direct
     leads_data, stats = _import_csv(tmp_path, LeadKategorie(kategorie))
-    imported, duplicates = import_direct(db, leads_data)
+    imported, duplicates, created_ids = import_direct(db, leads_data, return_created_ids=True)
+
+    if created_ids:
+        leads_with_website = (
+            db.query(Lead.id)
+            .filter(Lead.id.in_(created_ids), Lead.website.isnot(None), Lead.website != "")
+            .all()
+        )
+        for lead_id, in leads_with_website:
+            background_tasks.add_task(enrich_lead, lead_id)
 
     import os
     os.unlink(tmp_path)

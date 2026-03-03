@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, BackgroundTasks
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import or_
+from sqlalchemy import or_, case, exists, and_
 from sqlalchemy.orm import Session, joinedload
 
 from api.dependencies import get_db, verify_api_key
@@ -30,6 +30,10 @@ from database.models import (
     EmailHistory,
     FollowUp,
     EmailStatus,
+    Campaign,
+    CampaignLead,
+    CampaignStatus,
+    LeadSequenceAssignment,
 )
 
 limiter = Limiter(key_func=get_remote_address)
@@ -42,6 +46,8 @@ SORT_MAP = {
     "firma_desc": Lead.firma.desc(),
     "ranking_asc": Lead.ranking_score.asc(),
     "ranking_desc": Lead.ranking_score.desc(),
+    "stale_first": Lead.updated_at.asc(),
+    "followup_due_first": Lead.updated_at.asc(),
 }
 
 
@@ -119,7 +125,38 @@ def list_leads(request: Request,
             )
         )
 
-    q = q.order_by(SORT_MAP.get(sort, Lead.id.desc()))
+    if sort == "stale_first":
+        active_status_first = case(
+            (
+                Lead.status.in_(
+                    [
+                        LeadStatus.OFFEN,
+                        LeadStatus.PENDING,
+                        LeadStatus.RESPONSE_RECEIVED,
+                        LeadStatus.OFFER_SENT,
+                        LeadStatus.NEGOTIATION,
+                    ]
+                ),
+                0,
+            ),
+            else_=1,
+        )
+        q = q.order_by(active_status_first.asc(), Lead.updated_at.asc(), Lead.created_at.asc())
+    elif sort == "followup_due_first":
+        due_followup_exists = exists().where(
+            and_(
+                FollowUp.lead_id == Lead.id,
+                FollowUp.erledigt == False,
+                FollowUp.datum <= datetime.utcnow(),
+            )
+        )
+        q = q.order_by(
+            case((due_followup_exists, 0), else_=1).asc(),
+            Lead.updated_at.asc(),
+            Lead.created_at.asc(),
+        )
+    else:
+        q = q.order_by(SORT_MAP.get(sort, Lead.id.desc()))
     total = q.count()
     pages = max(1, (total + per_page - 1) // per_page)
     items = q.offset((page - 1) * per_page).limit(per_page).all()
@@ -154,6 +191,52 @@ def pipeline_view(
             "total": total,
         }
     return result
+
+
+@router.get("/leads/orchestration-conflicts")
+def orchestration_conflicts(db: Session = Depends(get_db)):
+    """Return leads that are actively orchestrated in both campaign and sequence tracks."""
+    active_campaign_lead_ids = {
+        row[0]
+        for row in (
+            db.query(CampaignLead.lead_id)
+            .join(Campaign, Campaign.id == CampaignLead.campaign_id)
+            .filter(CampaignLead.cl_status == "aktiv", Campaign.status == CampaignStatus.AKTIV)
+            .distinct()
+            .all()
+        )
+    }
+    active_sequence_lead_ids = {
+        row[0]
+        for row in (
+            db.query(LeadSequenceAssignment.lead_id)
+            .filter(LeadSequenceAssignment.status == "aktiv")
+            .distinct()
+            .all()
+        )
+    }
+
+    conflict_ids = sorted(active_campaign_lead_ids.intersection(active_sequence_lead_ids))
+    if not conflict_ids:
+        return {"count": 0, "lead_ids": [], "sample": []}
+
+    sample_leads = (
+        db.query(Lead)
+        .filter(Lead.id.in_(conflict_ids[:25]))
+        .order_by(Lead.updated_at.asc())
+        .all()
+    )
+    sample = [
+        {
+            "id": lead.id,
+            "firma": lead.firma,
+            "status": lead.status.value if hasattr(lead.status, "value") else str(lead.status),
+            "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
+        }
+        for lead in sample_leads
+    ]
+
+    return {"count": len(conflict_ids), "lead_ids": conflict_ids, "sample": sample}
 
 
 @router.get("/leads/{lead_id}", response_model=LeadDetail)

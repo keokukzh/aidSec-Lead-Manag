@@ -54,6 +54,9 @@ from database.models import (
     Settings,
     EmailSequence,
     LeadSequenceAssignment,
+    Campaign,
+    CampaignLead,
+    CampaignStatus,
     ABTest,
     BulkEmailJob,
 )
@@ -1417,6 +1420,9 @@ def assign_leads_to_sequence(seq_id: int, payload: SequenceAssignLeads, db: Sess
         raise HTTPException(404, "Sequence not found")
 
     assigned_count = 0
+    skipped_conflicts = 0
+    skipped_existing = 0
+    skipped_missing_email = 0
     for lead_id in payload.lead_ids:
         # Check if already assigned
         existing = db.query(LeadSequenceAssignment).filter(
@@ -1426,10 +1432,26 @@ def assign_leads_to_sequence(seq_id: int, payload: SequenceAssignLeads, db: Sess
         ).first()
 
         if existing:
+            skipped_existing += 1
+            continue
+
+        active_campaign_lead = (
+            db.query(CampaignLead)
+            .join(Campaign, Campaign.id == CampaignLead.campaign_id)
+            .filter(
+                CampaignLead.lead_id == lead_id,
+                CampaignLead.cl_status == "aktiv",
+                Campaign.status == CampaignStatus.AKTIV,
+            )
+            .first()
+        )
+        if active_campaign_lead:
+            skipped_conflicts += 1
             continue
 
         lead = db.query(Lead).filter(Lead.id == lead_id).first()
         if not lead or not lead.email:
+            skipped_missing_email += 1
             continue
 
         assignment = LeadSequenceAssignment(
@@ -1448,6 +1470,11 @@ def assign_leads_to_sequence(seq_id: int, payload: SequenceAssignLeads, db: Sess
 
     # Return stats
     stats = get_sequence_stats_internal(seq_id, db)
+    stats.assignment_requested = len(payload.lead_ids)
+    stats.assignment_added = assigned_count
+    stats.skipped_conflicts = skipped_conflicts
+    stats.skipped_existing = skipped_existing
+    stats.skipped_missing_email = skipped_missing_email
     return stats
 
 

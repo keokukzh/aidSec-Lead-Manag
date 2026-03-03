@@ -10,6 +10,16 @@ export interface DashboardKpisResponse {
   status: Record<string, number>;
   kategorie: Record<string, number>;
   followups: { overdue: number; today: number; upcoming: number };
+  throughput: {
+    handled_leads_today: number;
+    sent_today: number;
+    failed_today: number;
+    send_completion_rate: number;
+    pending_draft_count: number;
+    avg_draft_queue_age_hours: number;
+    stuck_leads_count: number;
+    due_followups_total: number;
+  };
   revenue: {
     total_pipeline: number;
     won_deals: number;
@@ -154,7 +164,7 @@ export const leadsApi = {
     if (params?.ranking) searchParams.set("ranking", params.ranking);
     if (params?.sort) searchParams.set("sort", params.sort);
     if (params?.page) searchParams.set("page", String(params.page));
-    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.limit) searchParams.set("per_page", String(params.limit));
     const query = searchParams.toString();
     return request<{ items: LeadListItem[]; total: number }>(
       `/leads${query ? `?${query}` : ""}`
@@ -217,6 +227,13 @@ export const leadsApi = {
   // Timeline
   getTimeline: (leadId: number) =>
     request<Array<{ date: string; type: string; detail: string; status?: string; done?: boolean }>>(`/leads/${leadId}/timeline`),
+
+  getOrchestrationConflicts: () =>
+    request<{
+      count: number;
+      lead_ids: number[];
+      sample: Array<{ id: number; firma: string | null; status: string; updated_at: string | null }>;
+    }>("/leads/orchestration-conflicts"),
 };
 
 // Campaigns
@@ -229,7 +246,16 @@ export const campaignsApi = {
     request<unknown>("/campaigns", { method: "POST", body: data }),
 
   update: (id: string, data: unknown) =>
-    request<unknown>(`/campaigns/${id}`, { method: "PUT", body: data }),
+    request<unknown>(`/campaigns/${id}`, { method: "PATCH", body: data }),
+
+  assignLeads: (campaignId: number, leadIds: number[]) =>
+    request<{
+      added: number;
+      skipped_conflicts: Array<{ lead_id: number; reason: string; sequence_id?: number }>;
+    }>(`/campaigns/${campaignId}/leads`, {
+      method: "POST",
+      body: { lead_ids: leadIds },
+    }),
 
   delete: (id: string) =>
     request<unknown>(`/campaigns/${id}`, { method: "DELETE" }),
@@ -375,7 +401,7 @@ export const emailsApi = {
       name: string;
       betreff: string;
       inhalt: string;
-    }>(`/emails/custom-templates/${id}/extend`, {
+    }>(`/emails/custom-templates/${id}`, {
       method: "PATCH",
       body: data,
     }),
@@ -560,7 +586,20 @@ export const emailsApi = {
     }>(`/emails/sequences/${id}/stats`),
 
   assignLeadsToSequence: (sequenceId: number, leadIds: number[], startNow: boolean = true) =>
-    request<{ success: boolean }>(`/emails/sequences/${sequenceId}/assign`, {
+    request<{
+      sequence_id: number;
+      name: string;
+      total_assigned: number;
+      active: number;
+      completed: number;
+      paused: number;
+      unsubscribed: number;
+      assignment_requested: number;
+      assignment_added: number;
+      skipped_conflicts: number;
+      skipped_existing: number;
+      skipped_missing_email: number;
+    }>(`/emails/sequences/${sequenceId}/assign`, {
       method: "POST",
       body: { lead_ids: leadIds, start_now: startNow },
     }),
