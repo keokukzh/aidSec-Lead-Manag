@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi, analyticsApi, agentTasksApi } from "@/lib/api";
 import {
   Users,
@@ -20,6 +20,7 @@ import {
   Send,
   Target,
   LucideIcon,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -88,8 +89,10 @@ function getWidthClass(value: number | null | undefined) {
 }
 
 export default function DashboardPage() {
+  const queryClient = useQueryClient();
+
   // Fetch overall KPIs
-  const { data: kpis, isLoading: isKpisLoading, isError: isKpisError, error: kpisError } = useQuery({
+  const { data: kpis, isLoading: isKpisLoading, isError: isKpisError, error: kpisError, refetch: refetchKpis } = useQuery({
     queryKey: ["dashboard-kpis"],
     queryFn: dashboardApi.getKpis,
     refetchInterval: 30000,
@@ -130,12 +133,26 @@ export default function DashboardPage() {
 
   if (isError) {
     const errMsg = kpisError instanceof Error ? kpisError.message : "API-Fehler";
+    const isFetchError = errMsg.includes("fetch") || errMsg.includes("Timeout") || errMsg.includes("Network");
     return (
       <div className="flex h-[80vh] flex-col items-center justify-center space-y-4">
-        <div className="rounded-lg border border-[#e74c3c33] bg-[#e74c3c11] p-6 max-w-md text-center">
+        <div className="rounded-lg border border-[#e74c3c33] bg-[#e74c3c11] p-6 max-w-lg text-center">
           <p className="font-mono text-sm text-[#e74c3c] mb-2">Dashboard konnte nicht geladen werden</p>
-          <p className="text-xs text-[#b8bec6]">{errMsg}</p>
-          <p className="text-xs text-[#6b7280] mt-3">Backend unter http://localhost:8000 erreichbar?</p>
+          <p className="text-xs text-[#b8bec6] mb-3">{errMsg}</p>
+          {isFetchError && (
+            <div className="text-left text-xs text-[#6b7280] mb-4 p-3 rounded bg-[#0e1117]">
+              <p className="font-medium text-[#b8bec6] mb-1">Backend starten:</p>
+              <code className="block text-[#00d4aa]">cd aidsec_dashboard</code>
+              <code className="block text-[#00d4aa]">python -m uvicorn api.main:app --host 0.0.0.0 --port 8000</code>
+            </div>
+          )}
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["dashboard-kpis", "conversion-health", "agent-tasks"] })}
+            className="inline-flex items-center gap-2 rounded-md bg-[#00d4aa] px-4 py-2 text-sm font-semibold text-[#0e1117] hover:bg-[#00e8bb]"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Erneut versuchen
+          </button>
         </div>
       </div>
     );
