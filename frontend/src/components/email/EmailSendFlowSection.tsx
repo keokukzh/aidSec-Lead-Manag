@@ -6,9 +6,10 @@ import type { LeadListItem } from "@/lib/api";
 
 interface EmailSendFlowSectionProps {
   leads: LeadListItem[];
+  initialLeadId?: string;
 }
 
-export function EmailSendFlowSection({ leads }: EmailSendFlowSectionProps) {
+export function EmailSendFlowSection({ leads, initialLeadId }: EmailSendFlowSectionProps) {
   const {
     selectedLead,
     setSelectedLead,
@@ -17,7 +18,7 @@ export function EmailSendFlowSection({ leads }: EmailSendFlowSectionProps) {
     generateMutation,
     sendMutation,
     onLeadChange,
-  } = useEmailSendFlow();
+  } = useEmailSendFlow(initialLeadId);
 
   const leadsWithEmail = leads.filter((l) => Boolean(l.email));
 

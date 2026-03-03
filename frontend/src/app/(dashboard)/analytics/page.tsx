@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { analyticsApi, emailsApi } from "@/lib/api";
 import {
@@ -8,8 +9,20 @@ import {
   Send,
   Target,
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 export default function AnalyticsPage() {
+  const [trendDays, setTrendDays] = useState<7 | 30>(30);
+
   const { data: health, isLoading: loadingHealth } = useQuery({
     queryKey: ["conversionHealth"],
     queryFn: () => analyticsApi.getConversionHealth(30),
@@ -18,6 +31,11 @@ export default function AnalyticsPage() {
   const { data: campaignPerf, isLoading: loadingCampaigns } = useQuery({
     queryKey: ["campaignPerformance"],
     queryFn: () => analyticsApi.getCampaignPerformance(),
+  });
+
+  const { data: trendData, isLoading: loadingTrends } = useQuery({
+    queryKey: ["conversionTrends", trendDays],
+    queryFn: () => analyticsApi.getConversionTrends(trendDays),
   });
 
   const { data: abStats, isLoading: loadingAbStats } = useQuery({
@@ -97,6 +115,81 @@ export default function AnalyticsPage() {
             {m?.conversions || 0} prospects won
           </p>
         </div>
+      </div>
+
+      {/* Conversion Trend Chart */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Conversion Trends</h2>
+          <select
+            value={trendDays}
+            onChange={(e) => setTrendDays(Number(e.target.value) as 7 | 30)}
+            className="rounded-md border border-border bg-muted/40 px-3 py-1.5 text-sm"
+            aria-label="Zeitraum für Trend-Chart"
+          >
+            <option value={7}>7 Tage</option>
+            <option value={30}>30 Tage</option>
+          </select>
+        </div>
+        {loadingTrends ? (
+          <div className="flex h-64 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#00d4aa]" />
+          </div>
+        ) : trendData?.trends?.length ? (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData.trends} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => {
+                    const d = new Date(v);
+                    return `${d.getDate()}.${d.getMonth() + 1}`;
+                  }}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => `${v}%`}
+                />
+                <Tooltip
+                  formatter={(value: number, name: string) => [`${value}%`, name]}
+                  labelFormatter={(label) => new Date(label).toLocaleDateString("de-CH")}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="open_rate"
+                  name="Open Rate"
+                  stroke="hsl(var(--muted-foreground))"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="reply_rate"
+                  name="Reply Rate"
+                  stroke="#00d4aa"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="conversion_rate"
+                  name="Conversion Rate"
+                  stroke="hsl(142, 71%, 45%)"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex h-64 items-center justify-center text-muted-foreground text-sm">
+            Keine Trenddaten verfügbar
+          </div>
+        )}
       </div>
 
       {/* Campaign Details Table */}

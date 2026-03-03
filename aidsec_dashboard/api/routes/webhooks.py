@@ -77,6 +77,9 @@ async def handle_inbound_email(request: Request, db: Session = Depends(get_db)):
     )
     db.add(new_task)
 
+    # Set last_reply_at for filter/badge
+    lead.last_reply_at = datetime.utcnow()
+
     # Move Lead state to PENDING if OFFEN
     if lead.status == LeadStatus.OFFEN:
         old_status = lead.status

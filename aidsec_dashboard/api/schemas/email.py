@@ -81,6 +81,8 @@ class GlobalEmailHistoryOut(BaseModel):
     id: int
     lead_id: int
     lead_firma: Optional[str] = None
+    lead_kategorie: Optional[str] = None
+    campaign_name: Optional[str] = None
     betreff: str
     inhalt: str
     status: str

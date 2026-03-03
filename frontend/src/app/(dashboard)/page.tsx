@@ -101,6 +101,12 @@ export default function DashboardPage() {
     queryFn: () => analyticsApi.getConversionHealth(30),
   });
 
+  // Fetch Campaign Performance (for mini-charts)
+  const { data: campaignPerf } = useQuery({
+    queryKey: ["campaignPerformance"],
+    queryFn: () => analyticsApi.getCampaignPerformance(),
+  });
+
   // Fetch Agent Tasks
   const { data: tasks, isLoading: isTasksLoading } = useQuery({
     queryKey: ["agent-tasks"],
@@ -283,6 +289,45 @@ export default function DashboardPage() {
             <CategoryCard label="Practices" value={kategorie.praxis || 0} icon={Stethoscope} color="#9b59b6" tagline="Rapid Header Fix" />
             <CategoryCard label="WordPress" value={kategorie.wordpress || 0} icon={Globe} color="#e67e22" tagline="Rapid Header Fix" />
           </div>
+
+          {/* Kampagnen Mini-Charts */}
+          {campaignPerf?.campaigns && campaignPerf.campaigns.length > 0 && (
+            <div className="rounded-2xl border border-[#2a3040] bg-[#1a1f2e] overflow-hidden">
+              <div className="border-b border-[#2a3040] px-6 py-4 flex items-center justify-between">
+                <h3 className="text-sm font-bold uppercase tracking-widest text-[#e8eaed] flex items-center gap-2">
+                  <Target className="h-4 w-4 text-[#00d4aa]" /> Kampagnen Performance
+                </h3>
+                <Link href="/analytics" className="text-[0.7rem] text-[#00d4aa] hover:underline flex items-center gap-1 font-mono uppercase">
+                  Details <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </div>
+              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {campaignPerf.campaigns.slice(0, 6).map((camp: { id: number; name: string; sent_emails: number; replies: number; reply_rate_pct: number; won: number }) => (
+                  <div
+                    key={camp.id}
+                    className="rounded-xl border border-[#2a3040] bg-[#0e1117]/50 p-4 hover:border-[#00d4aa33] transition-colors"
+                  >
+                    <p className="text-xs font-medium text-[#e8eaed] truncate mb-2" title={camp.name}>
+                      {camp.name}
+                    </p>
+                    <div className="flex items-center justify-between text-[0.65rem] text-[#b8bec6] mb-2">
+                      <span>Sent: {camp.sent_emails}</span>
+                      <span className="text-[#00d4aa]">Reply: {camp.reply_rate_pct}%</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#0e1117] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-linear-to-r from-[#00d4aa33] to-[#00d4aa] rounded-full transition-all"
+                        style={{ width: `${Math.min(camp.reply_rate_pct || 0, 100)}%` }}
+                      />
+                    </div>
+                    {camp.won > 0 && (
+                      <p className="mt-2 text-[0.6rem] text-[#2ecc71] font-mono">Won: {camp.won}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Workforce & Activity */}

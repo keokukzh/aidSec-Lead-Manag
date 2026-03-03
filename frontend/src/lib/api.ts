@@ -32,6 +32,7 @@ export interface LeadListItem {
   lead_score: number | null;
   website: string | null;
   created_at: string | null;
+  last_reply_at: string | null;
 }
 
 class ApiError extends Error {
@@ -124,6 +125,7 @@ export const leadsApi = {
     stadt?: string;
     quelle?: string;
     ranking?: string;
+    replied?: boolean;
     sort?: string;
     page?: number;
     limit?: number;
@@ -135,6 +137,7 @@ export const leadsApi = {
     if (params?.stadt) searchParams.set("stadt", params.stadt);
     if (params?.quelle) searchParams.set("quelle", params.quelle);
     if (params?.ranking) searchParams.set("ranking", params.ranking);
+    if (params?.replied !== undefined) searchParams.set("replied", String(params.replied));
     if (params?.sort) searchParams.set("sort", params.sort);
     if (params?.page) searchParams.set("page", String(params.page));
     if (params?.limit) searchParams.set("limit", String(params.limit));
@@ -240,6 +243,12 @@ export const followupsApi = {
     const query = searchParams.toString();
     return request<FollowUpItem[]>(`/followups${query ? `?${query}` : ""}`);
   },
+
+  create: (data: { lead_id: number; datum: string; notiz?: string }) =>
+    request<FollowUpItem>("/followups", {
+      method: "POST",
+      body: { lead_id: data.lead_id, datum: data.datum, notiz: data.notiz || "" },
+    }),
 
   update: (id: string, data: unknown) =>
     request<unknown>(`/followups/${id}`, { method: "PATCH", body: data }),
@@ -615,16 +624,24 @@ export const emailsApi = {
     request<{ cancelled: boolean }>(`/emails/bulk-send/${jobId}/cancel`, { method: "POST" }),
 
   // Existing methods
-  listDrafts: () =>
-    request<Array<{
+  listDrafts: (params?: { kategorie?: string; campaign_id?: number; search?: string }) => {
+    const sp = new URLSearchParams();
+    if (params?.kategorie) sp.set("kategorie", params.kategorie);
+    if (params?.campaign_id != null) sp.set("campaign_id", String(params.campaign_id));
+    if (params?.search) sp.set("search", params.search);
+    const qs = sp.toString();
+    return request<Array<{
       id: number;
       lead_id: number;
       lead_firma: string | null;
+      lead_kategorie: string | null;
+      campaign_name: string | null;
       betreff: string;
       inhalt: string;
       status: string;
       gesendet_at: string | null;
-    }>>("/emails/drafts"),
+    }>>(`/emails/drafts${qs ? `?${qs}` : ""}`);
+  },
 
   updateDraft: (draftId: number, data: { subject: string; body: string }) =>
     request<{ success: boolean }>(`/emails/drafts/${draftId}`, {
@@ -792,6 +809,18 @@ export const analyticsApi = {
         reply_rate_pct: number;
       }>;
     }>("/analytics/campaign-performance"),
+
+  getConversionTrends: (days: number = 30) =>
+    request<{
+      period_days: number;
+      trends: Array<{
+        date: string;
+        sent: number;
+        open_rate: number;
+        reply_rate: number;
+        conversion_rate: number;
+      }>;
+    }>(`/analytics/conversion-trends?days=${days}`),
 };
 
 // Agent Tasks

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { emailsApi } from "@/lib/api";
+import { emailsApi, campaignsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -11,7 +11,8 @@ import {
   Send,
   Save,
   CheckSquare,
-  Square
+  Square,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -19,10 +20,19 @@ interface Draft {
   id: number;
   lead_id: number;
   lead_firma: string | null;
+  lead_kategorie?: string | null;
+  campaign_name?: string | null;
   betreff: string;
   inhalt: string;
   status: string;
 }
+
+const kategorieOptions = [
+  { value: "", label: "Alle Kategorien" },
+  { value: "anwalt", label: "Anwalt" },
+  { value: "praxis", label: "Praxis" },
+  { value: "wordpress", label: "WordPress" },
+];
 
 export default function DraftsPage() {
   const queryClient = useQueryClient();
@@ -30,10 +40,23 @@ export default function DraftsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [filterKategorie, setFilterKategorie] = useState("");
+  const [filterCampaign, setFilterCampaign] = useState<string>("");
+  const [filterSearch, setFilterSearch] = useState("");
+
+  const { data: campaigns } = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: campaignsApi.list,
+  });
 
   const { data: drafts, isLoading } = useQuery<Draft[]>({
-    queryKey: ["drafts"],
-    queryFn: emailsApi.listDrafts,
+    queryKey: ["drafts", filterKategorie, filterCampaign, filterSearch],
+    queryFn: () =>
+      emailsApi.listDrafts({
+        kategorie: filterKategorie || undefined,
+        campaign_id: filterCampaign ? Number(filterCampaign) : undefined,
+        search: filterSearch || undefined,
+      }),
   });
 
   const bulkApproveMutation = useMutation({
@@ -120,6 +143,48 @@ export default function DraftsPage() {
         </div>
       </div>
 
+      {/* Filters */}
+      {!isLoading && (
+        <div className="flex flex-wrap gap-4 rounded-lg border border-border/50 bg-card p-4">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Suche nach Lead-Name, Firma..."
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              className="w-full rounded-md border border-border bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+            />
+          </div>
+          <select
+            value={filterKategorie}
+            onChange={(e) => setFilterKategorie(e.target.value)}
+            className="rounded-md border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+            aria-label="Nach Kategorie filtern"
+          >
+            {kategorieOptions.map((opt) => (
+              <option key={opt.value || "all"} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterCampaign}
+            onChange={(e) => setFilterCampaign(e.target.value)}
+            className="rounded-md border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+            aria-label="Nach Kampagne filtern"
+          >
+            <option value="">Alle Kampagnen</option>
+            {Array.isArray(campaigns) &&
+              (campaigns as { id: number; name: string }[]).map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
+
       {/* Main Content */}
       {isLoading ? (
         <div className="flex justify-center items-center py-20">
@@ -187,6 +252,16 @@ export default function DraftsPage() {
                             <Link href={`/leads/${draft.lead_id}`} className="font-semibold text-lg hover:text-accent transition-colors">
                               {draft.lead_firma || "Unbekannte Firma"}
                             </Link>
+                            {draft.lead_kategorie && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-muted/50 text-muted-foreground capitalize">
+                                {draft.lead_kategorie}
+                              </span>
+                            )}
+                            {draft.campaign_name && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-muted/50 text-muted-foreground truncate max-w-[120px]">
+                                {draft.campaign_name}
+                              </span>
+                            )}
                           </div>
                           {!isEditing && (
                             <h3 className="text-foreground mt-2 font-medium">RE: {draft.betreff}</h3>

@@ -81,6 +81,9 @@ class Lead(Base):
     linkedin = Column(String(500), nullable=True)
     xing = Column(String(500), nullable=True)
 
+    # Reply tracking (set by Brevo/SendGrid inbound webhook)
+    last_reply_at = Column(DateTime, nullable=True)
+
     # Relationships
     status_history = relationship("StatusHistory", back_populates="lead", cascade="all, delete-orphan")
     email_history = relationship("EmailHistory", back_populates="lead", cascade="all, delete-orphan")

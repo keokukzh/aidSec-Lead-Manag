@@ -3,7 +3,7 @@
 import { use } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { leadsApi, emailsApi } from "@/lib/api";
+import { leadsApi, emailsApi, followupsApi, type FollowUpItem } from "@/lib/api";
 import {
   ArrowLeft,
   Loader2,
@@ -14,6 +14,9 @@ import {
   ExternalLink,
   Search,
   Sparkles,
+  Clock,
+  Plus,
+  CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -87,6 +90,22 @@ export default function LeadDetailPage({ params }: PageProps) {
     queryKey: ["outlook-configured"],
     queryFn: () => emailsApi.checkOutlookConfigured(),
   });
+
+  const { data: leadFollowups } = useQuery({
+    queryKey: ["followups", "lead", id],
+    queryFn: () => followupsApi.list({ lead_id: id }),
+  });
+
+  const completeFollowupMutation = useMutation({
+    mutationFn: (fuId: number) => followupsApi.complete(String(fuId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["followups", "lead", id] });
+      queryClient.invalidateQueries({ queryKey: ["followups"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-kpis"] });
+    },
+  });
+
+  const openFollowups = (leadFollowups || []).filter((fu: FollowUpItem) => !fu.erledigt);
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<Lead>) => leadsApi.update(id, data),
@@ -378,6 +397,53 @@ export default function LeadDetailPage({ params }: PageProps) {
                     {new Date(l.research_last).toLocaleDateString()}
                   </span>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Follow-ups */}
+          <div className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-6">
+            <h2 className="mb-4 text-lg font-semibold text-[#e8eaed] flex items-center gap-2">
+              <Clock className="h-5 w-5" /> Follow-ups
+            </h2>
+            <div className="space-y-2">
+              <Link
+                href={`/followups/new?lead=${id}`}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-[#00d4aa] px-4 py-2 text-[#00d4aa] hover:bg-[#00d4aa11]"
+              >
+                <Plus className="h-4 w-4" />
+                Follow-up anlegen
+              </Link>
+              {openFollowups.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {openFollowups.map((fu: FollowUpItem) => (
+                    <div
+                      key={fu.id}
+                      className="flex items-center justify-between rounded-md border border-[#2a3040] bg-[#0e1117] px-3 py-2 text-sm"
+                    >
+                      <span className="text-[#b8bec6]">
+                        {new Date(fu.datum).toLocaleDateString("de-CH", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {fu.notiz && ` · ${fu.notiz.slice(0, 30)}${fu.notiz.length > 30 ? "…" : ""}`}
+                      </span>
+                      <button
+                        onClick={() => completeFollowupMutation.mutate(fu.id)}
+                        disabled={completeFollowupMutation.isPending}
+                        className="rounded p-1 text-[#00d4aa] hover:bg-[#00d4aa22] disabled:opacity-50"
+                        title="Erledigt"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-[#6b7280]">Keine offenen Follow-ups</p>
               )}
             </div>
           </div>

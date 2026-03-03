@@ -76,6 +76,7 @@ export default function LeadsPage() {
   const [kategorie, setKategorie] = useState("");
   const [stadt, setStadt] = useState("");
   const [ranking, setRanking] = useState("");
+  const [replied, setReplied] = useState<string>("");
   const [sort, setSort] = useState("newest");
 
   // Bulk selection
@@ -83,7 +84,7 @@ export default function LeadsPage() {
   const [bulkAction, setBulkAction] = useState<string>("");
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["leads", status, kategorie, search, stadt, ranking, sort],
+    queryKey: ["leads", status, kategorie, search, stadt, ranking, replied, sort],
     queryFn: () =>
       leadsApi.list({
         status: status || undefined,
@@ -91,6 +92,7 @@ export default function LeadsPage() {
         search: search || undefined,
         stadt: stadt || undefined,
         ranking: ranking || undefined,
+        replied: replied === "yes" ? true : replied === "no" ? false : undefined,
         sort: sort || undefined,
         limit: 200,
       }),
@@ -265,6 +267,18 @@ export default function LeadsPage() {
               {opt.label}
             </option>
           ))}
+        </select>
+
+        <select
+          value={replied}
+          onChange={(e) => setReplied(e.target.value)}
+          title="Nach Antwort filtern"
+          aria-label="Nach Antwort filtern"
+          className="rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-[#e8eaed] focus:border-[#00d4aa] focus:outline-none"
+        >
+          <option value="">Alle</option>
+          <option value="yes">Replied</option>
+          <option value="no">Nicht geantwortet</option>
         </select>
 
         <select
@@ -443,9 +457,19 @@ export default function LeadsPage() {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
-                      <span className={cn("badge", getStatusBadge(lead.status))}>
-                        {lead.status || "offen"}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className={cn("badge", getStatusBadge(lead.status))}>
+                          {lead.status || "offen"}
+                        </span>
+                        {lead.last_reply_at && (
+                          <span
+                            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#3498db]/20 text-[#3498db] border border-[#3498db]/30"
+                            title={`Geantwortet: ${new Date(lead.last_reply_at).toLocaleString("de-CH")}`}
+                          >
+                            Replied
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {lead.ranking_grade && (

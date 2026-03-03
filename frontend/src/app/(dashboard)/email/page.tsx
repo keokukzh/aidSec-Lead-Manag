@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { leadsApi, emailsApi } from "@/lib/api";
 import { useMemo } from "react";
 import { EmailComposerSection } from "@/components/email/EmailComposerSection";
@@ -12,6 +13,9 @@ import { EmailSendFlowSection } from "@/components/email/EmailSendFlowSection";
 import { SyncedEmailsSection } from "@/components/email/SyncedEmailsSection";
 
 export default function EmailPage() {
+  const searchParams = useSearchParams();
+  const leadParam = searchParams.get("lead");
+
   const { data: leadsData } = useQuery({
     queryKey: ["leads-all"],
     queryFn: () => leadsApi.list({ limit: 100 }),
@@ -42,7 +46,7 @@ export default function EmailPage() {
 
       <OutlookSyncSection />
 
-      <EmailSendFlowSection leads={leads} />
+      <EmailSendFlowSection leads={leads} initialLeadId={leadParam || undefined} />
 
       <SyncedEmailsSection />
     </div>

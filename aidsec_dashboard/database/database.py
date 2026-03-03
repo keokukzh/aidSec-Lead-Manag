@@ -81,6 +81,7 @@ def _ensure_legacy_columns():
         ("agent_tasks", "max_attempts", "ALTER TABLE agent_tasks ADD COLUMN max_attempts INTEGER DEFAULT 5"),
         ("agent_tasks", "next_retry_at", "ALTER TABLE agent_tasks ADD COLUMN next_retry_at DATETIME"),
         ("agent_tasks", "result_payload", "ALTER TABLE agent_tasks ADD COLUMN result_payload JSON"),
+        ("leads", "last_reply_at", "ALTER TABLE leads ADD COLUMN last_reply_at DATETIME"),
     ]
 
     with engine.begin() as conn:
