@@ -11,6 +11,7 @@ import { EmailAnalyticsSection } from "@/components/email/EmailAnalyticsSection"
 import { OutlookSyncSection } from "@/components/email/OutlookSyncSection";
 import { EmailSendFlowSection } from "@/components/email/EmailSendFlowSection";
 import { SyncedEmailsSection } from "@/components/email/SyncedEmailsSection";
+import { useOutlookSync } from "@/hooks/email";
 
 export default function EmailPage() {
   const searchParams = useSearchParams();
@@ -28,12 +29,24 @@ export default function EmailPage() {
 
   const leads = leadsData?.leads || [];
   const templates = useMemo(() => templatesData || [], [templatesData]);
+  const { outlookStatus, syncedEmails, syncMutation } = useOutlookSync();
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#e8eaed]">E-Mail</h1>
         <p className="text-[#b8bec6]">E-Mails generieren und versenden</p>
+      </div>
+
+      <EmailSendFlowSection leads={leads} initialLeadId={leadParam || undefined} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <OutlookSyncSection
+          outlookStatus={outlookStatus}
+          isSyncing={syncMutation.isPending}
+          onSync={() => syncMutation.mutate()}
+        />
+        <SyncedEmailsSection syncedEmails={syncedEmails} />
       </div>
 
       <EmailComposerSection leads={leads} templates={templates} />
@@ -43,12 +56,6 @@ export default function EmailPage() {
       <SequenceBuilderSection templates={templates} leads={leads} />
 
       <EmailAnalyticsSection />
-
-      <OutlookSyncSection />
-
-      <EmailSendFlowSection leads={leads} initialLeadId={leadParam || undefined} />
-
-      <SyncedEmailsSection />
     </div>
   );
 }

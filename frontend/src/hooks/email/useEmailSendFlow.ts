@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { emailsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 
 export function useEmailSendFlow(initialLeadId?: string) {
   const { showToast } = useToast();
-  const [selectedLead, setSelectedLead] = useState<string>(initialLeadId || "");
+  const [selectedLead, setSelectedLead] = useState<string>(initialLeadId ?? "");
   const [generatedEmail, setGeneratedEmail] = useState<{
     subject: string;
     body: string;
@@ -41,12 +41,6 @@ export function useEmailSendFlow(initialLeadId?: string) {
     setSelectedLead(leadId);
     setGeneratedEmail(null);
   };
-
-  useEffect(() => {
-    if (initialLeadId) {
-      setSelectedLead(initialLeadId);
-    }
-  }, [initialLeadId]);
 
   return {
     selectedLead,

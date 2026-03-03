@@ -12,7 +12,6 @@ interface EmailSendFlowSectionProps {
 export function EmailSendFlowSection({ leads, initialLeadId }: EmailSendFlowSectionProps) {
   const {
     selectedLead,
-    setSelectedLead,
     generatedEmail,
     setGeneratedEmail,
     generateMutation,

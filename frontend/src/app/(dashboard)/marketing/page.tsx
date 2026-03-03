@@ -4,12 +4,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { marketingApi } from "@/lib/api";
 import { Loader2, AlertCircle, Lightbulb, Plus, Sparkles, Wand2, X, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useToast } from "@/context/ToastContext";
 
 interface MarketingTracker {
   id: number;
   idea_number: number;
   title?: string;
   description?: string;
+  category?: string;
   status: string;
   prioritaet: number;
   notizen: string | null;
@@ -19,13 +21,13 @@ interface MarketingTracker {
 
 export default function MarketingPage() {
   const queryClient = useQueryClient();
-  const [isGenerating, setIsGenerating] = useState(false);
   const [optimizingId, setOptimizingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [generatedIdea, setGeneratedIdea] = useState<{ title: string; description: string } | null>(null);
   const [isCreatingManual, setIsCreatingManual] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
   const [manualDesc, setManualDesc] = useState("");
+  const { showToast } = useToast();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["marketing-tracker"],
@@ -37,17 +39,29 @@ export default function MarketingPage() {
     onSuccess: (data) => {
       if (data.success && data.title && data.description) {
         setGeneratedIdea({ title: data.title, description: data.description });
+        showToast({ message: "Neue KI-Idee erstellt", type: "success" });
       } else {
-        alert("Fehler beim Generieren der Idee: " + (data.error || "Unbekannter Fehler"));
+        showToast({ message: `Fehler beim Generieren: ${data.error || "Unbekannter Fehler"}`, type: "error" });
       }
     },
-    onSettled: () => setIsGenerating(false),
+    onError: (error: Error) => {
+      showToast({ message: `Generierung fehlgeschlagen: ${error.message}`, type: "error" });
+    },
   });
 
   const optimizeMutation = useMutation({
-    mutationFn: (idea: MarketingTracker) => marketingApi.optimize(idea.id, idea.title || "", idea.description || ""),
+    mutationFn: (idea: MarketingTracker) => marketingApi.optimize(
+      idea.id,
+      idea.title || "",
+      idea.description || "",
+      idea.category
+    ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["marketing-tracker"] });
+      showToast({ message: "Idee optimiert", type: "success" });
+    },
+    onError: (error: Error) => {
+      showToast({ message: `Optimierung fehlgeschlagen: ${error.message}`, type: "error" });
     },
     onSettled: () => setOptimizingId(null),
   });
@@ -56,6 +70,10 @@ export default function MarketingPage() {
     mutationFn: (id: number) => marketingApi.deleteTracker(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["marketing-tracker"] });
+      showToast({ message: "Idee gelöscht", type: "success" });
+    },
+    onError: (error: Error) => {
+      showToast({ message: `Löschen fehlgeschlagen: ${error.message}`, type: "error" });
     },
     onSettled: () => setDeletingId(null),
   });
@@ -69,14 +87,14 @@ export default function MarketingPage() {
       setIsCreatingManual(false);
       setManualTitle("");
       setManualDesc("");
+      showToast({ message: "Idee gespeichert", type: "success" });
     },
     onError: (err: Error) => {
-      alert("Fehler beim Speichern: " + (err.message || "Unbekannter Fehler"));
+      showToast({ message: `Fehler beim Speichern: ${err.message || "Unbekannter Fehler"}`, type: "error" });
     }
   });
 
   const handleGenerate = () => {
-    setIsGenerating(true);
     generateMutation.mutate();
   };
 
@@ -116,10 +134,10 @@ export default function MarketingPage() {
         <div className="flex items-center gap-3">
           <button 
             onClick={handleGenerate}
-            disabled={isGenerating}
+            disabled={generateMutation.isPending}
             className="flex items-center gap-2 rounded-md bg-[#1a1f2e] border border-[#2a3040] px-4 py-2 font-semibold text-[#b8bec6] hover:bg-[#2a3040] transition-colors disabled:opacity-50"
           >
-            {isGenerating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5 text-purple-400" />}
+            {generateMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5 text-purple-400" />}
             KI Idee generieren
           </button>
           <button 
@@ -277,7 +295,7 @@ export default function MarketingPage() {
                 <textarea
                   value={manualDesc}
                   onChange={(e) => setManualDesc(e.target.value)}
-                  className="w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-white focus:border-[#00d4aa] focus:outline-none min-h-[150px]"
+                  className="w-full rounded-md border border-[#2a3040] bg-[#0e1117] px-4 py-2 text-white focus:border-[#00d4aa] focus:outline-none min-h-37.5"
                   placeholder="Detaillierte Schritte..."
                 />
               </div>

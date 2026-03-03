@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time as _time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
@@ -82,6 +82,58 @@ def _load_signature(db: Session) -> dict:
         "logo_b64": logo_row.value if logo_row else "",
         "logo_mime": mime_row.value if mime_row else "",
     }
+
+
+def _fallback_generated_email(lead: Lead, email_type: str) -> dict:
+    product = get_recommended_product((lead.kategorie.value if lead.kategorie else "").lower())
+    grade = (lead.ranking_grade or "?").upper()
+    website = lead.website or "Ihre Website"
+
+    if email_type == "angebot":
+        subject = f"Angebot zur Absicherung von {lead.firma or 'Ihrer Website'}"
+        body = (
+            f"Guten Tag {lead.firma or 'Damen und Herren'},\n\n"
+            f"gerne sende ich Ihnen ein konkretes Angebot für {product['name']} ({product['preis']}).\n"
+            f"Wir können die wichtigsten Sicherheitslücken Ihrer Website ({website}) kurzfristig beheben.\n\n"
+            "Bei Interesse sende ich Ihnen den genauen Ablauf und den Starttermin.\n\n"
+            "Freundliche Grüsse\nAidSec"
+        )
+        return {"subject": subject, "body": body}
+
+    if email_type == "nachfassen":
+        subject = f"Kurzes Follow-up zu Ihrer Website-Sicherheit"
+        body = (
+            f"Guten Tag {lead.firma or 'Damen und Herren'},\n\n"
+            f"ich wollte kurz nachfassen: Ihr letzter Sicherheitsstatus liegt aktuell bei Note {grade}.\n"
+            f"Mit {product['name']} lassen sich die wichtigsten Punkte schnell verbessern.\n\n"
+            "Melden Sie sich gerne, wenn ich Ihnen die nächsten Schritte kurz zusammenfassen soll.\n\n"
+            "Freundliche Grüsse\nAidSec"
+        )
+        return {"subject": subject, "body": body}
+
+    subject = f"Sicherheits-Check für {lead.firma or 'Ihre Website'}"
+    body = (
+        f"Guten Tag {lead.firma or 'Damen und Herren'},\n\n"
+        f"bei einem kurzen Check Ihrer Website ({website}) ist ein Verbesserungsbedarf bei den Security Headern aufgefallen.\n"
+        f"Aktueller Stand: Note {grade}.\n\n"
+        f"Wir beheben das mit {product['name']} effizient und ohne lange Projektlaufzeit.\n\n"
+        "Falls gewünscht, sende ich Ihnen eine kurze Einschätzung mit Aufwand und Timing.\n\n"
+        "Freundliche Grüsse\nAidSec"
+    )
+    return {"subject": subject, "body": body}
+
+
+def _parse_graph_sent_at(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 @router.post("/emails/send")
@@ -406,14 +458,30 @@ def generate_email(payload: GenerateEmailRequest, db: Session = Depends(get_db))
         raise HTTPException(404, "Lead not found")
 
     llm = get_llm_service()
-    result = llm.generate_outreach_email(lead, db, email_type=payload.email_type)
+    try:
+        result = llm.generate_outreach_email(lead, db, email_type=payload.email_type)
+    except Exception:
+        result = {"success": False, "error": "LLM generation exception"}
+
     if not result.get("success"):
-        raise HTTPException(502, result.get("error", "LLM generation failed"))
+        fallback = _fallback_generated_email(lead, payload.email_type)
+        return {
+            "success": True,
+            "betreff": fallback["subject"],
+            "inhalt": fallback["body"],
+            "subject": fallback["subject"],
+            "body": fallback["body"],
+            "fallback": True,
+        }
 
     try:
-        parsed = parse_llm_json(result["content"])
+        parsed = parse_llm_json(result.get("content", ""))
         subject = parsed.get("betreff", "")
         body = parsed.get("inhalt", "")
+        if not subject or not body:
+            fallback = _fallback_generated_email(lead, payload.email_type)
+            subject = subject or fallback["subject"]
+            body = body or fallback["body"]
         return {
             "success": True,
             "betreff": subject,
@@ -422,11 +490,13 @@ def generate_email(payload: GenerateEmailRequest, db: Session = Depends(get_db))
             "body": body,
         }
     except Exception:
+        fallback = _fallback_generated_email(lead, payload.email_type)
         return {
             "success": True,
-            "raw": result["content"],
-            "subject": "",
-            "body": result["content"],
+            "raw": result.get("content", ""),
+            "subject": fallback["subject"],
+            "body": fallback["body"],
+            "fallback": True,
         }
 
 
@@ -1047,8 +1117,8 @@ def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
     Sync sent emails from Outlook to the database.
     Matches emails to leads by email address.
     """
+    from sqlalchemy import func
     from database.models import Lead, EmailHistory, EmailStatus
-    from datetime import datetime
 
     outlook = get_outlook_service()
 
@@ -1056,7 +1126,10 @@ def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
         raise HTTPException(503, "Outlook nicht konfiguriert")
 
     # Get sent emails from Outlook
-    result = outlook.get_sent_emails(limit=limit)
+    try:
+        result = outlook.get_sent_emails(limit=limit)
+    except Exception as exc:
+        raise HTTPException(502, f"Outlook Abruf fehlgeschlagen: {str(exc)}") from exc
 
     if not result.get("success"):
         raise HTTPException(502, result.get("error", "Fehler beim Abrufen"))
@@ -1070,7 +1143,12 @@ def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
     for email in outlook_emails:
         try:
             outlook_id = email.get("id")
-            to_addresses = email.get("to", [])
+            raw_to_addresses = email.get("to", [])
+            to_addresses = [
+                str(addr).strip().lower()
+                for addr in raw_to_addresses
+                if addr and str(addr).strip()
+            ]
             subject = email.get("subject", "")
             sent_at_str = email.get("sent_at")
 
@@ -1080,38 +1158,50 @@ def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
 
             # Try to match recipient to a lead
             for to_email in to_addresses:
-                lead = db.query(Lead).filter(Lead.email.ilike(to_email)).first()
+                lead = (
+                    db.query(Lead)
+                    .filter(Lead.email.isnot(None))
+                    .filter(func.lower(Lead.email) == to_email)
+                    .first()
+                )
 
                 if lead:
                     # Check if already synced
-                    existing = db.query(EmailHistory).filter(
-                        EmailHistory.outlook_message_id == outlook_id
-                    ).first()
+                    existing = None
+                    if outlook_id:
+                        existing = db.query(EmailHistory).filter(
+                            EmailHistory.outlook_message_id == outlook_id
+                        ).first()
+
+                    gesendet_at = _parse_graph_sent_at(sent_at_str)
+                    if not existing and gesendet_at is not None:
+                        existing = db.query(EmailHistory).filter(
+                            EmailHistory.lead_id == lead.id,
+                            EmailHistory.betreff == subject,
+                            EmailHistory.gesendet_at == gesendet_at,
+                        ).first()
 
                     if existing:
                         skipped += 1
                         break
 
-                    # Parse sent_at datetime
-                    gesendet_at = None
-                    if sent_at_str:
-                        try:
-                            gesendet_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
-                        except:
-                            pass
-
                     # Create email history entry
                     email_history = EmailHistory(
                         lead_id=lead.id,
                         betreff=subject,
-                        inhalt=email.get("preview", ""),
+                        inhalt=email.get("preview", "") or "",
                         status=EmailStatus.SENT,
                         gesendet_at=gesendet_at,
                         outlook_message_id=outlook_id
                     )
-                    db.add(email_history)
-                    synced += 1
-                    matched += 1
+                    try:
+                        with db.begin_nested():
+                            db.add(email_history)
+                            db.flush()
+                        synced += 1
+                        matched += 1
+                    except SQLAlchemyError as flush_error:
+                        errors.append(f"DB-Fehler bei {outlook_id or 'unknown'}: {str(flush_error)}")
                     break
             else:
                 # No matching lead found
@@ -1120,7 +1210,11 @@ def sync_outlook_emails(limit: int = 50, db: Session = Depends(get_db)):
         except Exception as e:
             errors.append(f"Error processing email {email.get('id')}: {str(e)}")
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError as commit_error:
+        db.rollback()
+        raise HTTPException(500, f"Fehler beim Speichern der Sync-Daten: {str(commit_error)}") from commit_error
 
     return {
         "success": True,

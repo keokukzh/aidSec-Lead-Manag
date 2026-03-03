@@ -1,10 +1,13 @@
 "use client";
 
 import { Mail } from "lucide-react";
-import { useOutlookSync } from "@/hooks/email";
+import type { SyncedEmailsData } from "@/hooks/email/useOutlookSync";
 
-export function SyncedEmailsSection() {
-  const { syncedEmails } = useOutlookSync();
+interface SyncedEmailsSectionProps {
+  syncedEmails?: SyncedEmailsData;
+}
+
+export function SyncedEmailsSection({ syncedEmails }: SyncedEmailsSectionProps) {
 
   return (
     <div className="rounded-lg border border-[#2a3040] bg-[#1a1f2e] p-6">
