@@ -685,6 +685,42 @@ def bulk_approve_drafts(payload: BulkDraftApproveRequest, background_tasks: Back
     return {"approved": len(approved_ids), "failed": len(drafts) - len(approved_ids)}
 
 
+@router.post("/emails/drafts/bulk-delete")
+def bulk_delete_drafts(payload: BulkDraftApproveRequest, db: Session = Depends(get_db)):
+    """Delete multiple drafts in a single DB operation."""
+    draft_ids = [int(i) for i in payload.draft_ids if i is not None]
+    if not draft_ids:
+        return {"deleted": 0}
+
+    try:
+        deleted = (
+            db.query(EmailHistory)
+            .filter(EmailHistory.id.in_(draft_ids), EmailHistory.status == EmailStatus.DRAFT)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        return {"deleted": int(deleted or 0)}
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(500, f"Bulk draft delete failed: {str(exc)}")
+
+
+@router.delete("/emails/drafts")
+def delete_all_drafts(db: Session = Depends(get_db)):
+    """Delete all pending drafts in one operation."""
+    try:
+        deleted = (
+            db.query(EmailHistory)
+            .filter(EmailHistory.status == EmailStatus.DRAFT)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        return {"deleted": int(deleted or 0)}
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(500, f"Delete all drafts failed: {str(exc)}")
+
+
 @router.get("/emails/custom-templates", response_model=list[CustomTemplateOut])
 def list_custom_templates(db: Session = Depends(get_db)):
     rows = db.query(EmailTemplate).order_by(EmailTemplate.name).all()

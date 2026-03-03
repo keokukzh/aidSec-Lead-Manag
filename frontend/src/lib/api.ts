@@ -714,7 +714,15 @@ export const emailsApi = {
     }),
 
   bulkDeleteDrafts: (draftIds: number[]) =>
-    Promise.all(draftIds.map((id) => request<void>(`/emails/drafts/${id}`, { method: "DELETE" }))),
+    request<{ deleted: number }>("/emails/drafts/bulk-delete", {
+      method: "POST",
+      body: { draft_ids: draftIds },
+    }),
+
+  deleteAllDrafts: () =>
+    request<{ deleted: number }>("/emails/drafts", {
+      method: "DELETE",
+    }),
 
   getAbTestingStats: () =>
     request<Array<{ subject: string; sent: number; responded: number; response_rate: number }>>("/emails/ab-testing"),
