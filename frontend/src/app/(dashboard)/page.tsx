@@ -89,28 +89,32 @@ function getWidthClass(value: number | null | undefined) {
 
 export default function DashboardPage() {
   // Fetch overall KPIs
-  const { data: kpis, isLoading: isKpisLoading } = useQuery({
+  const { data: kpis, isLoading: isKpisLoading, isError: isKpisError, error: kpisError } = useQuery({
     queryKey: ["dashboard-kpis"],
     queryFn: dashboardApi.getKpis,
     refetchInterval: 30000,
+    retry: false,
   });
 
   // Fetch Conversion Health
-  const { data: health, isLoading: isHealthLoading } = useQuery({
+  const { data: health, isLoading: isHealthLoading, isError: isHealthError } = useQuery({
     queryKey: ["conversion-health"],
     queryFn: () => analyticsApi.getConversionHealth(30),
+    retry: false,
   });
 
   // Fetch Campaign Performance (for mini-charts)
   const { data: campaignPerf } = useQuery({
     queryKey: ["campaignPerformance"],
     queryFn: () => analyticsApi.getCampaignPerformance(),
+    retry: false,
   });
 
   // Fetch Agent Tasks
-  const { data: tasks, isLoading: isTasksLoading } = useQuery({
+  const { data: tasks, isLoading: isTasksLoading, isError: isTasksError } = useQuery({
     queryKey: ["agent-tasks"],
     queryFn: () => agentTasksApi.listTasks(5),
+    retry: false,
   });
 
   // Fetch Sequence Worker Health (live status for Agent Workforce)
@@ -118,9 +122,24 @@ export default function DashboardPage() {
     queryKey: ["sequence-worker-health"],
     queryFn: () => dashboardApi.getSequenceWorkerHealth(),
     refetchInterval: 10000,
+    retry: false,
   });
 
   const isLoading = isKpisLoading || isHealthLoading || isTasksLoading;
+  const isError = isKpisError || isHealthError || isTasksError;
+
+  if (isError) {
+    const errMsg = kpisError instanceof Error ? kpisError.message : "API-Fehler";
+    return (
+      <div className="flex h-[80vh] flex-col items-center justify-center space-y-4">
+        <div className="rounded-lg border border-[#e74c3c33] bg-[#e74c3c11] p-6 max-w-md text-center">
+          <p className="font-mono text-sm text-[#e74c3c] mb-2">Dashboard konnte nicht geladen werden</p>
+          <p className="text-xs text-[#b8bec6]">{errMsg}</p>
+          <p className="text-xs text-[#6b7280] mt-3">Backend unter http://localhost:8000 erreichbar?</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
