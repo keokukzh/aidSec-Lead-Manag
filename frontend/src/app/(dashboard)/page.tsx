@@ -100,7 +100,7 @@ export default function DashboardPage() {
   });
 
   // Fetch Conversion Health
-  const { data: health, isLoading: isHealthLoading, isError: isHealthError } = useQuery({
+  const { data: health, isLoading: isHealthLoading, isError: isHealthError, error: healthError } = useQuery({
     queryKey: ["conversion-health"],
     queryFn: () => analyticsApi.getConversionHealth(30),
     retry: false,
@@ -114,7 +114,7 @@ export default function DashboardPage() {
   });
 
   // Fetch Agent Tasks
-  const { data: tasks, isLoading: isTasksLoading, isError: isTasksError } = useQuery({
+  const { data: tasks, isLoading: isTasksLoading, isError: isTasksError, error: tasksError } = useQuery({
     queryKey: ["agent-tasks"],
     queryFn: () => agentTasksApi.listTasks(5),
     retry: false,
@@ -132,8 +132,16 @@ export default function DashboardPage() {
   const isError = isKpisError || isHealthError || isTasksError;
 
   if (isError) {
-    const errMsg = kpisError instanceof Error ? kpisError.message : "API-Fehler";
-    const isFetchError = errMsg.includes("fetch") || errMsg.includes("Timeout") || errMsg.includes("Network");
+    const err = kpisError || healthError || tasksError;
+    const errMsg = err instanceof Error ? err.message : "API-Fehler";
+    const isFetchError = typeof errMsg === "string" && (
+      errMsg.toLowerCase().includes("fetch") ||
+      errMsg.includes("Timeout") ||
+      errMsg.includes("Network") ||
+      errMsg.includes("erreichbar")
+    );
+    const isDeployed = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+
     return (
       <div className="flex h-[80vh] flex-col items-center justify-center space-y-4">
         <div className="rounded-lg border border-[#e74c3c33] bg-[#e74c3c11] p-6 max-w-lg text-center">
@@ -141,9 +149,18 @@ export default function DashboardPage() {
           <p className="text-xs text-[#b8bec6] mb-3">{errMsg}</p>
           {isFetchError && (
             <div className="text-left text-xs text-[#6b7280] mb-4 p-3 rounded bg-[#0e1117]">
-              <p className="font-medium text-[#b8bec6] mb-1">Backend starten:</p>
-              <code className="block text-[#00d4aa]">cd aidsec_dashboard</code>
-              <code className="block text-[#00d4aa]">python -m uvicorn api.main:app --host 0.0.0.0 --port 8000</code>
+              {isDeployed ? (
+                <>
+                  <p className="font-medium text-[#b8bec6] mb-1">Online-Deployment: Backend-URL prüfen</p>
+                  <p className="mb-2">In Vercel/Deployment: <code className="text-[#00d4aa]">NEXT_PUBLIC_API_URL</code> auf deine Backend-URL setzen (z.B. https://dein-backend.railway.app/api)</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-[#b8bec6] mb-1">Backend starten (lokal):</p>
+                  <code className="block text-[#00d4aa]">cd aidsec_dashboard</code>
+                  <code className="block text-[#00d4aa]">python -m uvicorn api.main:app --host 0.0.0.0 --port 8000</code>
+                </>
+              )}
             </div>
           )}
           <button
