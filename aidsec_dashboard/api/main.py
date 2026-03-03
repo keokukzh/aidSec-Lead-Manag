@@ -54,12 +54,35 @@ app = FastAPI(
 app.state.limiter = limiter
 
 # CORS configuration
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:8501,http://localhost:3000")
-cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+def _split_csv_env(name: str) -> list[str]:
+    raw = os.getenv(name, "")
+    values = []
+    for part in raw.split(","):
+        value = part.strip().rstrip("/")
+        if value:
+            values.append(value)
+    return values
+
+
+default_local_origins = ["http://localhost:8501", "http://localhost:3000", "http://localhost:3001"]
+cors_origins = _split_csv_env("CORS_ORIGINS")
+
+frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+if frontend_url:
+    cors_origins.append(frontend_url)
+
+if not cors_origins:
+    cors_origins = default_local_origins
+
+cors_origin_regex = os.getenv(
+    "CORS_ORIGIN_REGEX",
+    r"https://.*\.vercel\.app|https://.*\.up\.railway\.app",
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins if cors_origins else ["http://localhost:8501"],
+    allow_origins=sorted(set(cors_origins)),
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
