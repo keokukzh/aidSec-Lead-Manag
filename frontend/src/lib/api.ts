@@ -961,6 +961,13 @@ export const importExportApi = {
 };
 
 // Marketing
+type MarketingGenerateResponse = {
+  success: boolean;
+  title: string;
+  description: string;
+  error?: string;
+};
+
 function resolveMarketingCategory(raw?: string): "anwalt" | "praxis" | "wordpress" | "allgemein" {
   const value = (raw || "").toLowerCase();
   if (value.includes("anw")) return "anwalt";
@@ -969,7 +976,7 @@ function resolveMarketingCategory(raw?: string): "anwalt" | "praxis" | "wordpres
   return "allgemein";
 }
 
-function buildMarketingIdeaFallback(category?: string, intent?: string) {
+function buildMarketingIdeaFallback(category?: string, intent?: string): MarketingGenerateResponse {
   const normalized = resolveMarketingCategory(category);
   const categoryLabel: Record<typeof normalized, string> = {
     anwalt: "Anwaltskanzleien",
@@ -1010,7 +1017,7 @@ export const marketingApi = {
     request<void>(`/marketing/tracker/${trackerId}`, { method: "DELETE" }),
 
   generate: (category?: string, intent?: string) =>
-    request<{ success: boolean; title: string; description: string; error?: string }>("/marketing/generate", {
+    request<MarketingGenerateResponse>("/marketing/generate", {
       method: "POST",
       body: { category, intent }
     }).catch((error) => {
