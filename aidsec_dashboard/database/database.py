@@ -53,17 +53,26 @@ def _set_sqlite_pragmas(dbapi_connection, connection_record):
     cursor.close()
 
 
-def _column_exists(conn, table_name: str, column_name: str) -> bool:
+def _column_exists_sqlite(conn, table_name: str, column_name: str) -> bool:
     rows = conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
     return any(row[1] == column_name for row in rows)
 
 
-def _ensure_legacy_columns():
-    """Best-effort migration for older SQLite databases without Alembic."""
-    if not IS_SQLITE:
-        return
+def _column_exists_postgres(conn, table_name: str, column_name: str) -> bool:
+    result = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :t AND column_name = :c"
+        ),
+        {"t": table_name, "c": column_name},
+    ).fetchone()
+    return result is not None
 
-    statements: list[tuple[str, str, str]] = [
+
+def _ensure_legacy_columns():
+    """Best-effort migration for older databases without Alembic (SQLite + PostgreSQL)."""
+    if IS_SQLITE:
+        statements: list[tuple[str, str, str]] = [
         ("email_history", "ab_test_id", "ALTER TABLE email_history ADD COLUMN ab_test_id INTEGER"),
         ("email_history", "ab_variant", "ALTER TABLE email_history ADD COLUMN ab_variant VARCHAR(1)"),
         ("email_history", "opened_at", "ALTER TABLE email_history ADD COLUMN opened_at DATETIME"),
@@ -82,16 +91,23 @@ def _ensure_legacy_columns():
         ("agent_tasks", "next_retry_at", "ALTER TABLE agent_tasks ADD COLUMN next_retry_at DATETIME"),
         ("agent_tasks", "result_payload", "ALTER TABLE agent_tasks ADD COLUMN result_payload JSON"),
         ("leads", "last_reply_at", "ALTER TABLE leads ADD COLUMN last_reply_at DATETIME"),
-    ]
-
-    with engine.begin() as conn:
-        for table_name, column_name, ddl in statements:
-            try:
-                if _column_exists(conn, table_name, column_name):
+        ]
+        with engine.begin() as conn:
+            for table_name, column_name, ddl in statements:
+                try:
+                    if _column_exists_sqlite(conn, table_name, column_name):
+                        continue
+                    conn.execute(text(ddl))
+                except Exception:
                     continue
-                conn.execute(text(ddl))
+    else:
+        # PostgreSQL: add last_reply_at if missing (causes 500 on dashboard/kpis, campaigns, etc.)
+        with engine.begin() as conn:
+            try:
+                if not _column_exists_postgres(conn, "leads", "last_reply_at"):
+                    conn.execute(text("ALTER TABLE leads ADD COLUMN last_reply_at TIMESTAMP"))
             except Exception:
-                continue
+                pass
 
 
 # Create tables if they don't exist
@@ -110,5 +126,4 @@ def get_session() -> Session:
 def init_db():
     """Initialize the database (create all tables)"""
     Base.metadata.create_all(bind=engine)
-    if IS_SQLITE:
-        _ensure_legacy_columns()
+    _ensure_legacy_columns()
