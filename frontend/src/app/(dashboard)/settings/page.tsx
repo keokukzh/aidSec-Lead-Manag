@@ -6,6 +6,10 @@ import { useState, useEffect } from "react";
 import { emailsApi, settingsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+const SETTINGS_API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api")
+  .trim()
+  .replace(/\/+$/, "");
+
 // Toast notification component
 function Toast({ message, type, onClose }: { message: string; type: "success" | "error"; onClose: () => void }) {
   useEffect(() => {
@@ -203,7 +207,7 @@ export default function SettingsPage() {
           }
 
           const redirectUri = `${window.location.origin}/api/auth/outlook/callback`;
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/emails/outlook/callback?code=${codeParam}&state=${stateParam || ""}&redirect_uri=${encodeURIComponent(redirectUri)}`, {
+          const response = await fetch(`${SETTINGS_API_BASE_URL}/emails/outlook/callback?code=${codeParam}&state=${stateParam || ""}&redirect_uri=${encodeURIComponent(redirectUri)}`, {
             method: "POST",
             headers: {
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
